@@ -1,0 +1,80 @@
+{
+  "learning_rate": 0.0005,
+  "track_validation_accuracy": 0.7248322147651006,
+  "macro_f1": 0.7309322422061907,
+  "classification_report": {
+    "blues": {
+      "precision": 1.0,
+      "recall": 0.4,
+      "f1-score": 0.5714285714285714,
+      "support": 15.0
+    },
+    "classical": {
+      "precision": 0.7368421052631579,
+      "recall": 0.9333333333333333,
+      "f1-score": 0.8235294117647058,
+      "support": 15.0
+    },
+    "country": {
+      "precision": 0.55,
+      "recall": 0.7333333333333333,
+      "f1-score": 0.6285714285714286,
+      "support": 15.0
+    },
+    "disco": {
+      "precision": 0.7857142857142857,
+      "recall": 0.7333333333333333,
+      "f1-score": 0.7586206896551724,
+      "support": 15.0
+    },
+    "hiphop": {
+      "precision": 0.875,
+      "recall": 0.9333333333333333,
+      "f1-score": 0.9032258064516129,
+      "support": 15.0
+    },
+    "jazz": {
+      "precision": 0.75,
+      "recall": 0.6428571428571429,
+      "f1-score": 0.6923076923076923,
+      "support": 14.0
+    },
+    "metal": {
+      "precision": 1.0,
+      "recall": 0.8,
+      "f1-score": 0.8888888888888888,
+      "support": 15.0
+    },
+    "pop": {
+      "precision": 0.9090909090909091,
+      "recall": 0.6666666666666666,
+      "f1-score": 0.7692307692307693,
+      "support": 15.0
+    },
+    "reggae": {
+      "precision": 0.8461538461538461,
+      "recall": 0.7333333333333333,
+      "f1-score": 0.7857142857142857,
+      "support": 15.0
+    },
+    "rock": {
+      "precision": 0.38461538461538464,
+      "recall": 0.6666666666666666,
+      "f1-score": 0.4878048780487805,
+      "support": 15.0
+    },
+    "accuracy": 0.7248322147651006,
+    "macro avg": {
+      "precision": 0.7837416530837584,
+      "recall": 0.7242857142857144,
+      "f1-score": 0.7309322422061907,
+      "support": 149.0
+    },
+    "weighted avg": {
+      "precision": 0.7839681071313005,
+      "recall": 0.7248322147651006,
+      "f1-score": 0.7311914673732945,
+      "support": 149.0
+    }
+  }
+}

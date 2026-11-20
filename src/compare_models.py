@@ -19,6 +19,7 @@ MODELS = ["cnn", "crnn", "lstm", "vit"]
 # ==========================================
 
 results = []
+class_f1_results = []
 
 for model_name in MODELS:
 
@@ -43,13 +44,20 @@ for model_name in MODELS:
 
     results.append({
         "Model": model_name.upper(),
-        "Test Loss": metrics.get("test_loss"),
+        "Segment Loss": metrics.get("segment_test_loss"),
         "Accuracy": metrics.get("test_accuracy"),
         "Precision": macro.get("precision"),
         "Recall": macro.get("recall"),
         "Macro F1": macro.get("f1-score"),
         "Weighted F1": weighted.get("f1-score"),
     })
+
+    for class_name in metrics.get("class_names", []):
+        class_f1_results.append({
+            "Model": model_name.upper(),
+            "Genre": class_name,
+            "F1": report.get(class_name, {}).get("f1-score"),
+        })
 
 # ==========================================
 # 3. CREATE COMPARISON TABLE
@@ -140,7 +148,27 @@ plt.savefig(
 plt.show()
 
 # ==========================================
-# 6. TRAINING HISTORY COMPARISON
+# 6. PER-CLASS F1 COMPARISON
+# ==========================================
+
+class_f1_df = pd.DataFrame(class_f1_results)
+if not class_f1_df.empty:
+    class_f1_pivot = class_f1_df.pivot(
+        index="Genre", columns="Model", values="F1"
+    )
+    ax = class_f1_pivot.plot(kind="bar", figsize=(12, 6))
+    ax.set_title("Per-Genre F1 Comparison")
+    ax.set_xlabel("Genre")
+    ax.set_ylabel("F1-Score")
+    ax.set_ylim(0, 1)
+    ax.grid(axis="y", alpha=0.3)
+    plt.xticks(rotation=35, ha="right")
+    plt.tight_layout()
+    plt.savefig(REPORT_DIR / "model_per_class_f1.png", dpi=300)
+    plt.show()
+
+# ==========================================
+# 7. TRAINING HISTORY COMPARISON
 # ==========================================
 
 for metric in ["accuracy", "loss"]:

@@ -112,6 +112,32 @@ Split by original track before creating any smaller windows or augmented version
 
 All four models will use the same track-level split and evaluation metrics. Model-specific input transformations will be documented so comparisons remain fair.
 
+## Part B: validation-only hyperparameter tuning
+
+Run a small learning-rate sweep for all four models from the project root:
+
+```powershell
+python -m src.tune_models
+```
+
+The default sweep tries `1e-4`, `5e-4`, and `1e-3` for each architecture. It uses track-level validation accuracy and macro F1 to compare trials, and does not evaluate the test split during tuning. Checkpoints and histories are kept in separate `models/tuning/` and `reports/tuning/` subfolders so baseline models and reports are not overwritten.
+
+To tune only selected models or use a different small candidate set:
+
+```powershell
+python -m src.tune_models --models cnn crnn --learning-rates 0.0001 0.0005 0.001
+```
+
+Review `reports/tuning/best_configurations.json` and `reports/tuning/validation_macro_f1_by_learning_rate.png`. Then retrain each selected model at its chosen learning rate without tuning mode, and run its normal evaluation once on the test split. Use the PowerShell environment variable `MUSICGENRE_LEARNING_RATE` to set that model's selected rate for the final run.
+
+Generate the baseline model comparison charts and table with:
+
+```powershell
+python -m src.compare_models
+```
+
+This produces accuracy, macro F1, per-genre F1, and training-history comparisons under `reports/`.
+
 ## Current status
 
 - [x] Project structure and configuration

@@ -1,0 +1,30 @@
+{
+  "CNN": {
+    "model": "CNN",
+    "learning_rate": 0.0005,
+    "track_validation_accuracy": 0.8456375838926175,
+    "macro_f1": 0.845976062467998,
+    "artifact_dir": "tuning/cnn/lr_5e-04"
+  },
+  "CRNN": {
+    "model": "CRNN",
+    "learning_rate": 0.0005,
+    "track_validation_accuracy": 0.8187919463087249,
+    "macro_f1": 0.8206964160648811,
+    "artifact_dir": "tuning/crnn/lr_5e-04"
+  },
+  "LSTM": {
+    "model": "LSTM",
+    "learning_rate": 0.001,
+    "track_validation_accuracy": 0.7248322147651006,
+    "macro_f1": 0.7194836175350343,
+    "artifact_dir": "tuning/lstm/lr_1e-03"
+  },
+  "VIT": {
+    "model": "VIT",
+    "learning_rate": 0.0005,
+    "track_validation_accuracy": 0.7248322147651006,
+    "macro_f1": 0.7309322422061907,
+    "artifact_dir": "tuning/vit/lr_5e-04"
+  }
+}

@@ -13,6 +13,7 @@ Model-specific (the only intended differences):
   * LEARNING_RATE
 """
 from pathlib import Path
+import os
 import json
 import numpy as np
 import pandas as pd
@@ -27,6 +28,11 @@ MODEL_DIR = ROOT / "models"
 REPORT_DIR = ROOT / "reports"
 MODEL_DIR.mkdir(exist_ok=True)
 REPORT_DIR.mkdir(exist_ok=True)
+RUN_DIR = os.environ.get("MUSICGENRE_RUN_DIR")
+ARTIFACT_MODEL_DIR = MODEL_DIR / RUN_DIR if RUN_DIR else MODEL_DIR
+ARTIFACT_REPORT_DIR = REPORT_DIR / RUN_DIR if RUN_DIR else REPORT_DIR
+ARTIFACT_MODEL_DIR.mkdir(parents=True, exist_ok=True)
+ARTIFACT_REPORT_DIR.mkdir(parents=True, exist_ok=True)
 
 # ---------------------------------------------------------------- COMMON SETTINGS
 SEED = 42
@@ -37,7 +43,7 @@ CLIP_SECONDS = 30
 SEGMENT_SECONDS = 3
 CROPS_PER_TRACK = 6
 # ---------------------------------------------------------- MODEL-SPECIFIC SETTINGS
-LEARNING_RATE = 5e-4   # kept from your original LSTM script
+LEARNING_RATE = float(os.environ.get("MUSICGENRE_LEARNING_RATE", "5e-4"))
 POOL_SIZE = 4          # time pooling before the LSTM (same value as your original)
 
 tf.keras.utils.set_random_seed(SEED)
@@ -234,7 +240,7 @@ def build_lstm(input_shape, classes):
 model = build_lstm(INPUT_SHAPE, num_classes)
 model.summary()
 
-best_model_path = MODEL_DIR / "lstm_best.keras"
+best_model_path = ARTIFACT_MODEL_DIR / "lstm_best.keras"
 callbacks = [
     tf.keras.callbacks.ModelCheckpoint(
         best_model_path, monitor="val_loss", save_best_only=True, mode="min", verbose=1),
@@ -242,7 +248,7 @@ callbacks = [
         monitor="val_loss", patience=14, restore_best_weights=True, verbose=1),
     tf.keras.callbacks.ReduceLROnPlateau(
         monitor="val_loss", factor=0.5, patience=5, min_lr=1e-6, verbose=1),
-    tf.keras.callbacks.CSVLogger(REPORT_DIR / "lstm_training_history.csv"),
+    tf.keras.callbacks.CSVLogger(ARTIFACT_REPORT_DIR / "lstm_training_history.csv"),
 ]
 
 model.fit(
@@ -257,6 +263,25 @@ model.fit(
 # ------------------------------------------------------------------ evaluation
 best_model = tf.keras.models.load_model(best_model_path, custom_objects={"SpecAugment": SpecAugment})
 
+if os.environ.get("MUSICGENRE_TUNING_MODE") == "1":
+    val_seg_probs = best_model.predict(Xv_seg, batch_size=BATCH_SIZE, verbose=1)
+    val_track_probs = val_seg_probs.reshape(len(X_val), N_SEG, num_classes).mean(axis=1)
+    val_predictions = np.argmax(val_track_probs, axis=1)
+    val_report = classification_report(
+        y_val, val_predictions, labels=np.arange(num_classes),
+        target_names=class_names, output_dict=True, zero_division=0,
+    )
+    with open(ARTIFACT_REPORT_DIR / "validation_metrics.json", "w", encoding="utf-8") as f:
+        json.dump({
+            "learning_rate": LEARNING_RATE,
+            "track_validation_accuracy": float(np.mean(val_predictions == y_val)),
+            "macro_f1": float(val_report["macro avg"]["f1-score"]),
+            "classification_report": val_report,
+        }, f, indent=2)
+    print(f"Validation track accuracy: {np.mean(val_predictions == y_val):.4f}")
+    print(f"Validation macro F1: {val_report['macro avg']['f1-score']:.4f}")
+    raise SystemExit(0)
+
 seg_loss, seg_acc = best_model.evaluate(Xt_seg, yt_seg, batch_size=BATCH_SIZE, verbose=1)
 seg_probs = best_model.predict(Xt_seg, batch_size=BATCH_SIZE, verbose=1)
 
@@ -268,7 +293,7 @@ track_acc = float(np.mean(predictions == y_test))
 report = classification_report(
     y_test, predictions, labels=np.arange(num_classes),
     target_names=class_names, output_dict=True, zero_division=0)
-with open(REPORT_DIR / "lstm_test_metrics.json", "w", encoding="utf-8") as f:
+with open(ARTIFACT_REPORT_DIR / "lstm_test_metrics.json", "w", encoding="utf-8") as f:
     json.dump({
         "segment_test_loss": float(seg_loss),
         "segment_test_accuracy": float(seg_acc),
@@ -284,7 +309,7 @@ fig, ax = plt.subplots(figsize=(10, 8))
 disp.plot(ax=ax, cmap="Blues", xticks_rotation=45, colorbar=False)
 ax.set_title("LSTM — GTZAN Test Confusion Matrix (track level)")
 fig.tight_layout()
-fig.savefig(REPORT_DIR / "lstm_confusion_matrix.png", dpi=160)
+fig.savefig(ARTIFACT_REPORT_DIR / "lstm_confusion_matrix.png", dpi=160)
 plt.close(fig)
 
 print("\nLSTM training complete.")

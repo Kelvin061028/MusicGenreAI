@@ -2,6 +2,7 @@
 import streamlit as st
 import tensorflow as tf
 import numpy as np
+import pandas as pd
 import librosa
 import tempfile
 import json
@@ -14,6 +15,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 MODEL_DIR = ROOT / "models"
+REPORT_DIR = ROOT / "reports"
+PROCESSED_DIR = ROOT / "data" / "processed"
 NORM_STATS_PATH = MODEL_DIR / "norm_stats.json"
 
 GENRES = [
@@ -587,6 +590,149 @@ if uploaded_file is not None:
                 )
 
                 st.exception(error)
+
+st.divider()
+
+# =====================================================
+# 9. DATASET AND MODEL RESULTS
+# =====================================================
+
+st.header("Dataset and Model Results")
+st.caption(
+    "Explore the dataset splits, validation-only tuning trials, and the latest saved test reports."
+)
+
+split_rows = []
+split_sizes = {}
+for split_name, csv_name in (
+    ("Train", "train.csv"),
+    ("Validation", "validation.csv"),
+    ("Test", "test.csv"),
+):
+    split_path = PROCESSED_DIR / csv_name
+    if split_path.exists():
+        split_frame = pd.read_csv(split_path)
+        split_sizes[split_name] = len(split_frame)
+        if "genre" in split_frame.columns:
+            counts = split_frame["genre"].value_counts()
+            split_rows.extend(
+                {"Genre": genre, "Split": split_name, "Tracks": int(count)}
+                for genre, count in counts.items()
+            )
+
+if split_sizes:
+    count_columns = st.columns(3)
+    for column, split_name in zip(count_columns, ("Train", "Validation", "Test")):
+        column.metric(f"{split_name} tracks", f"{split_sizes.get(split_name, 0):,}")
+
+if split_rows:
+    split_chart = pd.DataFrame(split_rows).pivot(
+        index="Genre", columns="Split", values="Tracks"
+    ).reindex(index=GENRES, columns=["Train", "Validation", "Test"]).fillna(0)
+    st.subheader("Tracks per Genre and Split")
+    st.bar_chart(split_chart)
+else:
+    st.info("Dataset split CSVs were not found under data/processed/.")
+
+st.subheader("Learning-Rate Tuning")
+tuning_path = REPORT_DIR / "tuning" / "tuning_summary.csv"
+if tuning_path.exists():
+    tuning_frame = pd.read_csv(tuning_path)
+    tuning_pivot = tuning_frame.pivot(
+        index="learning_rate", columns="model", values="macro_f1"
+    ).sort_index()
+    st.caption("Track-level validation macro F1. The tuning sweep does not use the test split.")
+    st.line_chart(tuning_pivot)
+
+    best_rows = (
+        tuning_frame.sort_values(
+            ["model", "macro_f1", "track_validation_accuracy"],
+            ascending=[True, False, False],
+        )
+        .groupby("model", as_index=False)
+        .first()
+    )
+    st.write("Best validation setting for each model")
+    st.dataframe(
+        best_rows[["model", "learning_rate", "track_validation_accuracy", "macro_f1"]]
+        .rename(columns={
+            "model": "Model",
+            "learning_rate": "Learning rate",
+            "track_validation_accuracy": "Validation accuracy",
+            "macro_f1": "Validation macro F1",
+        }),
+        hide_index=True,
+        use_container_width=True,
+    )
+else:
+    st.info("No tuning summary found. Run `python -m src.tune_models` to create it.")
+
+st.subheader("Latest Saved Test Results")
+st.caption(
+    "Loaded from reports/*_test_metrics.json. After final training with the selected rates, "
+    "rerun model evaluation to refresh these test results."
+)
+
+test_rows = []
+class_f1_rows = []
+available_confusion_matrices = {}
+for model_key, display_name, stem in (
+    ("CNN", "CNN", "cnn"),
+    ("CRNN", "CRNN", "crnn"),
+    ("LSTM", "LSTM", "lstm"),
+    ("Vision Transformer", "ViT", "vit"),
+):
+    metrics_path = REPORT_DIR / f"{stem}_test_metrics.json"
+    if not metrics_path.exists():
+        continue
+    with metrics_path.open("r", encoding="utf-8") as metrics_file:
+        metrics = json.load(metrics_file)
+    report = metrics.get("classification_report", {})
+    macro = report.get("macro avg", {})
+    test_rows.append({
+        "Model": display_name,
+        "Accuracy": metrics.get("test_accuracy"),
+        "Macro F1": macro.get("f1-score"),
+    })
+    for genre in metrics.get("class_names", []):
+        class_f1_rows.append({
+            "Genre": genre,
+            "Model": display_name,
+            "F1": report.get(genre, {}).get("f1-score"),
+        })
+    confusion_path = REPORT_DIR / f"{stem}_confusion_matrix.png"
+    if confusion_path.exists():
+        available_confusion_matrices[display_name] = confusion_path
+
+if test_rows:
+    test_frame = pd.DataFrame(test_rows).set_index("Model")
+    st.bar_chart(test_frame)
+else:
+    st.info("No saved test metric reports were found under reports/.")
+
+if class_f1_rows:
+    class_f1_pivot = pd.DataFrame(class_f1_rows).pivot(
+        index="Genre", columns="Model", values="F1"
+    ).reindex(GENRES)
+    st.subheader("Test F1 by Genre")
+    st.bar_chart(class_f1_pivot)
+
+if available_confusion_matrices:
+    confusion_model = st.selectbox(
+        "Confusion matrix",
+        list(available_confusion_matrices),
+        key="results_confusion_model",
+    )
+    st.image(
+        str(available_confusion_matrices[confusion_model]),
+        caption=f"{confusion_model} saved test confusion matrix",
+        use_container_width=True,
+    )
+
+st.caption(
+    "The prediction selector loads models/*.keras. Tuning checkpoints in models/tuning/ "
+    "are separate; retrain the selected settings to update the app's models."
+)
 
 st.divider()
 

@@ -1,0 +1,19 @@
+{
+  "mean": -1.0036142583658147e-08,
+  "std": 0.9999999403953552,
+  "n_mels": 128,
+  "segment_frames": 129,
+  "clip_frames": 1292,
+  "class_names": [
+    "blues",
+    "classical",
+    "country",
+    "disco",
+    "hiphop",
+    "jazz",
+    "metal",
+    "pop",
+    "reggae",
+    "rock"
+  ]
+}

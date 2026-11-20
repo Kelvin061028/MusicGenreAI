@@ -14,6 +14,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 MODEL_DIR = ROOT / "models"
+NORM_STATS_PATH = MODEL_DIR / "norm_stats.json"
 
 GENRES = [
     "blues",
@@ -162,7 +163,7 @@ CUSTOM_OBJECTS = {
 # =====================================================
 
 @st.cache_resource
-def load_model(model_path):
+def load_model(model_path, model_mtime_ns):
 
     model = tf.keras.models.load_model(
         model_path,
@@ -250,7 +251,7 @@ def generate_spectrogram(audio):
 
     mel_db = (
         mel_db - mean
-    ) / (std + 1e-8)
+    ) / (std + 1e-6)
 
     return mel_db.astype(np.float32)
 
@@ -259,7 +260,32 @@ def generate_spectrogram(audio):
 # 6. AUTOMATIC MODEL INPUT PREPARATION
 # =====================================================
 
-def prepare_model_input(model, mel_db):
+def prepare_model_input(model, mel_db, norm_stats):
+
+    # Match training/evaluation: normalize with training-set statistics, then
+    # split the full track into non-overlapping 3-second segments.
+    segment_frames = int(norm_stats["segment_frames"])
+    clip_frames = int(norm_stats["clip_frames"])
+    mean = float(norm_stats["mean"])
+    std = float(norm_stats["std"])
+
+    if mel_db.shape[0] != int(norm_stats["n_mels"]):
+        raise ValueError(
+            f"Expected {norm_stats['n_mels']} Mel bins, got {mel_db.shape[0]}"
+        )
+
+    if mel_db.shape[1] < clip_frames:
+        mel_db = np.pad(mel_db, ((0, 0), (0, clip_frames - mel_db.shape[1])))
+    else:
+        mel_db = mel_db[:, :clip_frames]
+
+    mel_db = (mel_db - mean) / std
+    num_segments = clip_frames // segment_frames
+    usable_frames = num_segments * segment_frames
+    segments = mel_db[:, :usable_frames].reshape(
+        mel_db.shape[0], num_segments, segment_frames
+    )
+    segments = segments.transpose(1, 0, 2)[..., np.newaxis]
 
     input_shape = model.input_shape
 
@@ -272,8 +298,8 @@ def prepare_model_input(model, mel_db):
         input_shape = input_shape[0]
 
     # -------------------------------------------------
-    # Rank 4: Image input (CNN, CRNN, ViT)
-    # Expected: (None, height, width, channels)
+    # Current CNN, CRNN, LSTM, and ViT models all accept segment images.
+    # The LSTM converts each segment to a sequence inside its model graph.
     # -------------------------------------------------
 
     if len(input_shape) == 4:
@@ -287,20 +313,15 @@ def prepare_model_input(model, mel_db):
                 f"Expected one input channel, got {expected_channels}"
             )
 
-        image = mel_db[np.newaxis, ..., np.newaxis]
+        if (expected_height is not None and expected_height != segments.shape[1]) or (
+            expected_width is not None and expected_width != segments.shape[2]
+        ):
+            raise ValueError(
+                f"Model expects segment shape {input_shape[1:3]}, "
+                f"but preprocessing produced {segments.shape[1:3]}"
+            )
 
-        # Resize to model's actual input dimensions
-        if expected_height is not None and expected_width is not None:
-
-            image = tf.image.resize(
-                image,
-                size=(
-                    int(expected_height),
-                    int(expected_width)
-                )
-            ).numpy()
-
-        return image.astype(np.float32)
+        return segments.astype(np.float32)
 
     # -------------------------------------------------
     # Rank 3: Sequential input (LSTM)
@@ -312,14 +333,14 @@ def prepare_model_input(model, mel_db):
         expected_steps = input_shape[1]
         expected_features = input_shape[2]
 
-        sequence = mel_db.T
+        sequence = segments[..., 0].transpose(0, 2, 1)
 
         # Convert to expected feature orientation
         if expected_features == 128:
             pass
 
         elif expected_steps == 128:
-            sequence = mel_db
+            sequence = segments[..., 0]
 
         else:
             raise ValueError(
@@ -330,16 +351,14 @@ def prepare_model_input(model, mel_db):
         if expected_steps is not None:
 
             sequence = tf.image.resize(
-                sequence[np.newaxis, ..., np.newaxis],
+                sequence[..., np.newaxis],
                 size=(
                     int(expected_steps),
                     int(expected_features)
                 )
-            ).numpy()[0, ..., 0]
+            ).numpy()[..., 0]
 
-        return sequence[np.newaxis, ...].astype(
-            np.float32
-        )
+        return sequence.astype(np.float32)
 
     else:
 
@@ -427,8 +446,15 @@ if uploaded_file is not None:
 
                     # Load model
                     model = load_model(
-                        str(model_path)
+                        str(model_path), model_path.stat().st_mtime_ns
                     )
+
+                    if not NORM_STATS_PATH.exists():
+                        raise FileNotFoundError(
+                            f"Training normalization stats not found: {NORM_STATS_PATH}"
+                        )
+                    with NORM_STATS_PATH.open("r", encoding="utf-8") as stats_file:
+                        norm_stats = json.load(stats_file)
 
                     # Process audio
                     audio = load_audio(
@@ -442,7 +468,8 @@ if uploaded_file is not None:
                     # Prepare input automatically
                     model_input = prepare_model_input(
                         model,
-                        mel_db
+                        mel_db,
+                        norm_stats
                     )
 
                     # Debug information
@@ -457,10 +484,11 @@ if uploaded_file is not None:
                     )
 
                     # Predict
-                    predictions = model.predict(
+                    segment_predictions = model.predict(
                         model_input,
                         verbose=0
-                    )[0]
+                    )
+                    predictions = segment_predictions.mean(axis=0)
 
                     predicted_index = int(
                         np.argmax(predictions)

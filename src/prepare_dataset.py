@@ -78,7 +78,12 @@ def main() -> None:
         try:
             feature = audio_to_log_mel(row["path"])
             np.save(output_path, feature)
-            metadata.append({**row, "feature_path": str(output_path.relative_to(PROCESSED_DATA_DIR))})
+            # Store project-relative paths so the generated CSVs work across machines.
+            metadata.append({
+                **row,
+                "path": Path(row["path"]).relative_to(RAW_DATA_DIR.parent.parent).as_posix(),
+                "feature_path": output_path.relative_to(PROCESSED_DATA_DIR).as_posix(),
+            })
         except Exception as exc:  # Keep processing other tracks if one file is corrupt.
             failures.append({"path": row["path"], "error": str(exc)})
         if index % 50 == 0 or index == len(rows):

@@ -22,7 +22,9 @@ ARTIFACT_REPORT_DIR.mkdir(parents=True, exist_ok=True)
  
 SEED = 42
 BATCH_SIZE = 32
-EPOCHS = 80
+EPOCHS = int(os.environ.get("MUSICGENRE_EPOCHS", "80"))
+EARLY_STOPPING_PATIENCE = int(os.environ.get("MUSICGENRE_EARLY_STOPPING_PATIENCE", "14"))
+LR_PATIENCE = int(os.environ.get("MUSICGENRE_LR_PATIENCE", "5"))
 LEARNING_RATE = float(os.environ.get("MUSICGENRE_LEARNING_RATE", "5e-4"))
 L2 = 1e-4
 CLIP_SECONDS = 30      # GTZAN clip length
@@ -229,9 +231,9 @@ callbacks = [
     tf.keras.callbacks.ModelCheckpoint(
         best_model_path, monitor="val_loss", save_best_only=True, mode="min", verbose=1),
     tf.keras.callbacks.EarlyStopping(
-        monitor="val_loss", patience=14, restore_best_weights=True, verbose=1),
+        monitor="val_loss", patience=EARLY_STOPPING_PATIENCE, restore_best_weights=True, verbose=1),
     tf.keras.callbacks.ReduceLROnPlateau(
-        monitor="val_loss", factor=0.5, patience=5, min_lr=1e-6, verbose=1),
+        monitor="val_loss", factor=0.5, patience=LR_PATIENCE, min_lr=1e-6, verbose=1),
     tf.keras.callbacks.CSVLogger(ARTIFACT_REPORT_DIR / "cnn_training_history.csv"),
 ]
  

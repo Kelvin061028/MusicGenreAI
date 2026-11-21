@@ -132,8 +132,10 @@ All four models will use the same track-level split and evaluation metrics. Mode
 Run a small learning-rate sweep for all four models from the project root:
 
 ```powershell
-python -m src.tune_models
+python -m src.tune_models --epochs 20 --patience 5
 ```
+
+The shorter epoch cap and early-stopping patience apply only to the learning-rate sweep. Use the same settings for all four models during tuning. Final training still defaults to up to 80 epochs; choose the rates from the validation results, then train the final checkpoints.
 
 The default sweep tries `1e-4`, `5e-4`, and `1e-3` for each architecture. It uses track-level validation accuracy and macro F1 to compare trials, and does not evaluate the test split during tuning. Checkpoints and histories are kept in separate `models/tuning/` and `reports/tuning/` subfolders so baseline models and reports are not overwritten.
 

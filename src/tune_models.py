@@ -1,7 +1,7 @@
 """Run a small validation-only learning-rate sweep for the four models.
 
 Example:
-    python -m src.tune_models
+    python -m src.tune_models --epochs 20 --patience 5
     python -m src.tune_models --models cnn crnn --learning-rates 0.0001 0.0005 0.001
 
 Each trial writes its checkpoint and history to separate tuning subfolders.
@@ -33,11 +33,21 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--models", nargs="+", choices=MODELS, default=list(MODELS))
     parser.add_argument(
+        "--epochs", type=int, default=20,
+        help="Maximum epochs per tuning trial (final training still defaults to 80).",
+    )
+    parser.add_argument(
+        "--patience", type=int, default=5,
+        help="Early-stopping patience for tuning trials.",
+    )
+    parser.add_argument(
         "--learning-rates", nargs="+", type=float,
         default=[1e-4, 5e-4, 1e-3],
         help="Candidate Adam learning rates; defaults to 1e-4 5e-4 1e-3.",
     )
     args = parser.parse_args()
+    if args.epochs < 1 or args.patience < 1:
+        parser.error("--epochs and --patience must be positive integers.")
     if any(rate <= 0 for rate in args.learning_rates):
         parser.error("All learning rates must be positive.")
 
@@ -51,10 +61,17 @@ def main() -> None:
             report_path = REPORT_DIR / run_dir / "validation_metrics.json"
             env = os.environ.copy()
             env["MUSICGENRE_LEARNING_RATE"] = str(rate)
+            env["MUSICGENRE_EPOCHS"] = str(args.epochs)
+            env["MUSICGENRE_EARLY_STOPPING_PATIENCE"] = str(args.patience)
+            env["MUSICGENRE_LR_PATIENCE"] = str(max(2, args.patience // 2))
             env["MUSICGENRE_RUN_DIR"] = run_dir.as_posix()
             env["MUSICGENRE_TUNING_MODE"] = "1"
 
-            print(f"\n=== {model_name.upper()} | learning rate {rate:g} ===", flush=True)
+            print(
+                f"\n=== {model_name.upper()} | learning rate {rate:g} "
+                f"| max epochs {args.epochs} ===",
+                flush=True,
+            )
             subprocess.run(
                 [sys.executable, "-m", f"src.train_{model_name}"],
                 cwd=ROOT,

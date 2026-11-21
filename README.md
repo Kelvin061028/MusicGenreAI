@@ -85,10 +85,10 @@ FMA-small audio does not include its genre labels and official train/validation/
 python -m src.prepare_fma_dataset `
   --audio-dir "C:\Users\Kelvin\Downloads\fma_small" `
   --metadata "C:\Users\Kelvin\Downloads\fma_metadata\tracks.csv" `
-  --max-per-genre 300
+  --max-per-genre 500
 ```
 
-This selects up to 300 tracks per top-level genre (up to 2,400 total), retains FMA's official split assignments, and writes the generated features and split CSVs under `data/processed/`. The FMA-small task has eight genres, so retrain all four models after preparing it. Each artist's tracks remain in the same official split to reduce artist leakage. The audio files remain local; check each track's license before redistribution.
+This selects up to 500 tracks per top-level genre (up to 4,000 total), retains FMA's official split assignments, and writes the generated features and split CSVs under `data/processed/`. The FMA-small task has eight genres, so retrain all four models after preparing it. Each artist's tracks remain in the same official split to reduce artist leakage. The audio files remain local; check each track's license before redistribution.
 
 For the original GTZAN preprocessing command above, the script will:
 

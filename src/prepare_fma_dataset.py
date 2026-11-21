@@ -107,8 +107,8 @@ def main() -> None:
     parser.add_argument(
         "--max-per-genre",
         type=int,
-        default=300,
-        help="Balanced cap per genre; 300 uses up to 2,400 tracks and keeps FMA's official splits.",
+        default=500,
+        help="Balanced cap per genre; 500 uses up to 4,000 tracks and keeps FMA's official splits.",
     )
     args = parser.parse_args()
     if args.max_per_genre < 10:

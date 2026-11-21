@@ -1,19 +1,17 @@
 {
-  "mean": -1.0036142583658147e-08,
-  "std": 0.9999999403953552,
+  "mean": -7.359235887349769e-09,
+  "std": 0.9998436570167542,
   "n_mels": 128,
   "segment_frames": 129,
   "clip_frames": 1292,
   "class_names": [
-    "blues",
-    "classical",
-    "country",
-    "disco",
-    "hiphop",
-    "jazz",
-    "metal",
+    "electronic",
+    "experimental",
+    "folk",
+    "hip-hop",
+    "instrumental",
+    "international",
     "pop",
-    "reggae",
     "rock"
   ]
 }

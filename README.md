@@ -2,6 +2,8 @@
 
 This project compares four deep-learning architectures for classifying music genres:
 
+**The active experiment uses the GTZAN dataset.** The FMA-small preprocessing script is an optional alternative.
+
 1. CNN (Convolutional Neural Network)
 2. CRNN (CNN + LSTM)
 3. LSTM (Long Short-Term Memory)
@@ -77,7 +79,7 @@ Check that all ten genre folders are detected and that the file counts look reas
 python -m src.prepare_dataset
 ```
 
-### Use the FMA-small dataset
+### Optional: switch to the FMA-small dataset
 
 FMA-small audio does not include its genre labels and official train/validation/test split in the audio ZIP. Download and extract the separate `fma_metadata.zip` from the [FMA dataset repository](https://github.com/mdeff/fma), then prepare a balanced subset from the official splits:
 

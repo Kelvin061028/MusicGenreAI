@@ -99,6 +99,30 @@ def audio_to_log_mel(path: Path) -> np.ndarray:
     return ((log_mel - log_mel.mean()) / (log_mel.std() + 1e-6)).astype(np.float32)
 
 
+def make_feature_row(item: dict, audio_dir: Path, feature_dir: Path, genre_to_label: dict) -> tuple[dict | None, str | None]:
+    track_id = int(item["track_id"])
+    track_key = f"{track_id:06d}"
+    audio_path = audio_dir / track_key[:3] / f"{track_key}.mp3"
+    if not audio_path.exists():
+        return None, "Audio file not found"
+
+    feature_name = f"fma_{track_id:06d}.npy"
+    output_path = feature_dir / feature_name
+    try:
+        if not output_path.exists():
+            np.save(output_path, audio_to_log_mel(audio_path))
+        return {
+            "track_id": f"fma_{track_id:06d}",
+            "path": f"data/fma_small/{track_key[:3]}/{track_key}.mp3",
+            "genre": item["genre"],
+            "label": genre_to_label[item["genre"]],
+            "feature_path": f"log_mel/{feature_name}",
+            "split": item["split"],
+        }, None
+    except Exception as error:
+        return None, str(error)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--audio-dir", type=Path, default=DATA_DIR / "fma_small")
@@ -109,6 +133,11 @@ def main() -> None:
         type=int,
         default=500,
         help="Balanced cap per genre; 500 uses up to 4,000 tracks and keeps FMA's official splits.",
+    )
+    parser.add_argument(
+        "--repair-existing",
+        action="store_true",
+        help="Fill missing genre/split counts in an existing metadata.csv without reprocessing its tracks.",
     )
     args = parser.parse_args()
     if args.max_per_genre < 10:
@@ -122,36 +151,76 @@ def main() -> None:
         raise SystemExit(f"FMA audio folder was not found: {args.audio_dir}")
 
     candidates = read_fma_metadata(args.metadata)
-    selected, genres = choose_balanced_subset(candidates, args.max_per_genre)
-    selected["label"] = selected["genre"].map({genre: i for i, genre in enumerate(genres)})
+    genres = sorted(candidates["genre"].unique().tolist())
+    if len(genres) != 8:
+        raise SystemExit(f"Expected FMA-small's 8 top-level genres, found {len(genres)}: {genres}")
+    genre_to_label = {genre: i for i, genre in enumerate(genres)}
     feature_dir = args.output_dir / "log_mel"
     feature_dir.mkdir(parents=True, exist_ok=True)
     REPORTS_DIR.mkdir(parents=True, exist_ok=True)
 
+    if args.repair_existing:
+        existing_path = args.output_dir / "metadata.csv"
+        if not existing_path.exists():
+            raise SystemExit(f"Cannot repair: no existing metadata CSV at {existing_path}")
+        existing = pd.read_csv(existing_path)
+        existing_ids = {
+            int(str(track_id).removeprefix("fma_"))
+            for track_id in existing["track_id"].astype(str)
+        }
+        target_counts = {
+            "train": int(args.max_per_genre * 0.8),
+            "validation": int(args.max_per_genre * 0.1),
+            "test": args.max_per_genre - int(args.max_per_genre * 0.8) - int(args.max_per_genre * 0.1),
+        }
+        additions = []
+        failures = []
+        for genre in genres:
+            for split, per_genre_target in target_counts.items():
+                present = existing[(existing["genre"] == genre) & (existing["split"] == split)]
+                needed = per_genre_target - len(present)
+                if needed <= 0:
+                    continue
+                pool = candidates[(candidates["genre"] == genre) & (candidates["split"] == split)]
+                pool = pool[~pool["track_id"].isin(existing_ids)]
+                pool = pool.sample(frac=1, random_state=RANDOM_STATE)
+                for item in pool.to_dict("records"):
+                    row, error = make_feature_row(item, args.audio_dir, feature_dir, genre_to_label)
+                    if row is None:
+                        failures.append({"track_id": item["track_id"], "error": error})
+                        continue
+                    additions.append(row)
+                    existing_ids.add(int(item["track_id"]))
+                    needed -= 1
+                    if needed == 0:
+                        break
+                if needed:
+                    raise SystemExit(f"Could not fill {genre}/{split}: still missing {needed} tracks")
+
+        if additions:
+            existing = pd.concat([existing, pd.DataFrame(additions)], ignore_index=True)
+        existing = existing.sort_values(["split", "genre", "track_id"]).reset_index(drop=True)
+        for split in ("train", "validation", "test"):
+            existing[existing["split"] == split].to_csv(args.output_dir / f"{split}.csv", index=False)
+        existing.to_csv(existing_path, index=False)
+        if failures:
+            pd.DataFrame(failures).to_csv(REPORTS_DIR / "fma_repair_errors.csv", index=False)
+        print(f"Added {len(additions)} replacement tracks")
+        print(f"Total tracks: {len(existing)}")
+        print("Tracks per genre and split:")
+        print(existing.groupby(["genre", "split"]).size().unstack(fill_value=0).to_string())
+        return
+
+    selected, _ = choose_balanced_subset(candidates, args.max_per_genre)
+    selected["label"] = selected["genre"].map(genre_to_label)
     rows = []
     failures = []
     for index, item in enumerate(selected.to_dict("records"), start=1):
-        track_id = int(item["track_id"])
-        track_key = f"{track_id:06d}"
-        audio_path = args.audio_dir / track_key[:3] / f"{track_key}.mp3"
-        if not audio_path.exists():
-            failures.append({"track_id": track_id, "error": "Audio file not found"})
-            continue
-
-        feature_name = f"fma_{track_id:06d}.npy"
-        output_path = feature_dir / feature_name
-        try:
-            np.save(output_path, audio_to_log_mel(audio_path))
-            rows.append({
-                "track_id": f"fma_{track_id:06d}",
-                "path": f"data/fma_small/{track_key[:3]}/{track_key}.mp3",
-                "genre": item["genre"],
-                "label": item["label"],
-                "feature_path": f"log_mel/{feature_name}",
-                "split": item["split"],
-            })
-        except Exception as error:
-            failures.append({"track_id": track_id, "error": str(error)})
+        row, error = make_feature_row(item, args.audio_dir, feature_dir, genre_to_label)
+        if row is None:
+            failures.append({"track_id": item["track_id"], "error": error})
+        else:
+            rows.append(row)
 
         if index % 50 == 0 or index == len(selected):
             print(f"Processed {index}/{len(selected)} selected FMA tracks")

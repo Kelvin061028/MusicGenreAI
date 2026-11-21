@@ -90,6 +90,8 @@ python -m src.prepare_fma_dataset `
 
 This selects up to 500 tracks per top-level genre (up to 4,000 total), retains FMA's official split assignments, and writes the generated features and split CSVs under `data/processed/`. The FMA-small task has eight genres, so retrain all four models after preparing it. Each artist's tracks remain in the same official split to reduce artist leakage. The audio files remain local; check each track's license before redistribution.
 
+FMA dataset and metadata attribution: Defferrard et al., [FMA: A Dataset for Music Analysis](https://github.com/mdeff/fma). FMA metadata is distributed under CC BY 4.0; each audio track retains its artist-selected license.
+
 For the original GTZAN preprocessing command above, the script will:
 
 - Load audio as mono at 22,050 Hz.

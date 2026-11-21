@@ -15,8 +15,6 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 MODEL_DIR = ROOT / "models"
-REPORT_DIR = ROOT / "reports"
-PROCESSED_DIR = ROOT / "data" / "processed"
 NORM_STATS_PATH = MODEL_DIR / "norm_stats.json"
 
 GENRES = [
@@ -178,57 +176,7 @@ def load_model(model_path, model_mtime_ns):
 
 
 # =====================================================
-# 4. AUDIO PREPROCESSING
-# =====================================================
-
-def load_audio(uploaded_file):
-
-    suffix = Path(uploaded_file.name).suffix
-
-    with tempfile.NamedTemporaryFile(
-        delete=False,
-        suffix=suffix
-    ) as temp_file:
-
-        temp_file.write(
-            uploaded_file.getvalue()
-        )
-
-        temp_path = temp_file.name
-
-    try:
-
-        audio, sr = librosa.load(
-            temp_path,
-            sr=SAMPLE_RATE,
-            mono=True,
-            duration=DURATION
-        )
-
-    finally:
-
-        Path(temp_path).unlink(
-            missing_ok=True
-        )
-
-    target_length = SAMPLE_RATE * DURATION
-
-    # Pad short audio
-    if len(audio) < target_length:
-
-        audio = np.pad(
-            audio,
-            (0, target_length - len(audio))
-        )
-
-    # Truncate long audio
-    audio = audio[:target_length]
-
-    return audio
-
-
-# =====================================================
-# 5. GENERATE LOG-MEL SPECTROGRAM
+# 4. GENERATE LOG-MEL SPECTROGRAM
 # =====================================================
 
 def generate_spectrogram(audio):
@@ -260,7 +208,7 @@ def generate_spectrogram(audio):
 
 
 # =====================================================
-# 6. AUTOMATIC MODEL INPUT PREPARATION
+# 5. AUTOMATIC MODEL INPUT PREPARATION
 # =====================================================
 
 def prepare_model_input(model, mel_db, norm_stats):
@@ -370,372 +318,155 @@ def prepare_model_input(model, mel_db, norm_stats):
         )
 
 
+@st.cache_data(show_spinner=False)
+def predict_uploaded_track(audio_bytes, audio_name, model_versions, norm_stats_json):
+    """Run every available classifier once for this uploaded track."""
+    with tempfile.NamedTemporaryFile(
+        delete=False,
+        suffix=Path(audio_name).suffix,
+    ) as temp_file:
+        temp_file.write(audio_bytes)
+        temp_path = temp_file.name
+
+    try:
+        audio, _ = librosa.load(
+            temp_path,
+            sr=SAMPLE_RATE,
+            mono=True,
+            duration=DURATION,
+        )
+    finally:
+        Path(temp_path).unlink(missing_ok=True)
+
+    target_length = SAMPLE_RATE * DURATION
+    if len(audio) < target_length:
+        audio = np.pad(audio, (0, target_length - len(audio)))
+    audio = audio[:target_length]
+    mel_db = generate_spectrogram(audio)
+    norm_stats = json.loads(norm_stats_json)
+
+    results = {}
+    errors = {}
+    for model_name, filename in MODEL_FILES.items():
+        model_path = MODEL_DIR / filename
+        if not model_path.exists():
+            errors[model_name] = f"Checkpoint not found: {filename}"
+            continue
+        try:
+            model = load_model(str(model_path), model_versions[model_name])
+            model_input = prepare_model_input(model, mel_db, norm_stats)
+            segment_predictions = model.predict(model_input, verbose=0)
+            probabilities = np.asarray(segment_predictions).mean(axis=0)
+            results[model_name] = probabilities.astype(float)
+        except Exception as error:
+            errors[model_name] = str(error)
+
+    return results, errors
+
+
 # =====================================================
-# 7. STREAMLIT INTERFACE
+# 7. UPLOAD, PREDICT WITH ALL FOUR MODELS, AND COMPARE
 # =====================================================
 
-st.set_page_config(
-    page_title="MusicGenre AI",
-    page_icon="🎵",
-    layout="wide"
-)
-
+st.set_page_config(page_title="MusicGenre AI", page_icon="🎵", layout="wide")
 st.title("🎵 MusicGenre AI")
+st.subheader("Music Genre Classification Using Deep Learning")
+st.write("Upload one track to compare its predictions from CNN, CRNN, LSTM, and Vision Transformer.")
 
-st.subheader(
-    "Music Genre Classification Using Deep Learning"
-)
-
-st.write(
-    "Upload a music track and classify it using "
-    "four different deep learning architectures."
-)
-
-st.divider()
-
-# Model selection
-selected_model = st.selectbox(
-    "Select Deep Learning Model",
-    list(MODEL_FILES.keys())
-)
-
-# Audio upload
 uploaded_file = st.file_uploader(
     "Upload a music file",
-    type=["wav", "mp3", "ogg", "flac"]
+    type=["wav", "mp3", "ogg", "flac"],
 )
-
-# =====================================================
-# 8. PREDICTION
-# =====================================================
 
 if uploaded_file is not None:
+    audio_bytes = uploaded_file.getvalue()
+    st.audio(audio_bytes, format=uploaded_file.type)
+    st.caption(f"Uploaded track: {uploaded_file.name} · predictions use up to the first {DURATION} seconds.")
 
-    st.audio(
-        uploaded_file,
-        format=uploaded_file.type
-    )
-
-    st.write(
-        f"**Uploaded file:** {uploaded_file.name}"
-    )
-
-    model_path = (
-        MODEL_DIR / MODEL_FILES[selected_model]
-    )
-
-    if not model_path.exists():
-
-        st.warning(
-            f"{selected_model} model has not been trained yet."
-        )
-
-        st.write(
-            f"Expected file: `{model_path}`"
-        )
-
+    if not NORM_STATS_PATH.exists():
+        st.error(f"Training normalization stats not found: {NORM_STATS_PATH}")
     else:
+        missing_models = [
+            name for name, filename in MODEL_FILES.items()
+            if not (MODEL_DIR / filename).exists()
+        ]
+        if missing_models:
+            st.warning("Missing model checkpoints: " + ", ".join(missing_models))
 
-        if st.button(
-            "Predict Music Genre",
-            type="primary"
-        ):
+        with NORM_STATS_PATH.open("r", encoding="utf-8") as stats_file:
+            norm_stats_json = json.dumps(json.load(stats_file), sort_keys=True)
+        model_versions = {
+            name: (MODEL_DIR / filename).stat().st_mtime_ns
+            for name, filename in MODEL_FILES.items()
+            if (MODEL_DIR / filename).exists()
+        }
 
+        with st.spinner("Running the uploaded track through all available models..."):
             try:
-
-                with st.spinner(
-                    "Analyzing your music..."
-                ):
-
-                    # Load model
-                    model = load_model(
-                        str(model_path), model_path.stat().st_mtime_ns
-                    )
-
-                    if not NORM_STATS_PATH.exists():
-                        raise FileNotFoundError(
-                            f"Training normalization stats not found: {NORM_STATS_PATH}"
-                        )
-                    with NORM_STATS_PATH.open("r", encoding="utf-8") as stats_file:
-                        norm_stats = json.load(stats_file)
-
-                    # Process audio
-                    audio = load_audio(
-                        uploaded_file
-                    )
-
-                    mel_db = generate_spectrogram(
-                        audio
-                    )
-
-                    # Prepare input automatically
-                    model_input = prepare_model_input(
-                        model,
-                        mel_db,
-                        norm_stats
-                    )
-
-                    # Debug information
-                    st.write(
-                        "**Model expected input:**",
-                        model.input_shape
-                    )
-
-                    st.write(
-                        "**Actual prediction input:**",
-                        model_input.shape
-                    )
-
-                    # Predict
-                    segment_predictions = model.predict(
-                        model_input,
-                        verbose=0
-                    )
-                    predictions = segment_predictions.mean(axis=0)
-
-                    predicted_index = int(
-                        np.argmax(predictions)
-                    )
-
-                    predicted_genre = GENRES[
-                        predicted_index
-                    ]
-
-                    confidence = float(
-                        predictions[predicted_index]
-                    )
-
-                # -------------------------------------
-                # DISPLAY RESULTS
-                # -------------------------------------
-
-                st.success(
-                    "Prediction completed successfully!"
+                predictions_by_model, prediction_errors = predict_uploaded_track(
+                    audio_bytes,
+                    uploaded_file.name,
+                    model_versions,
+                    norm_stats_json,
                 )
-
-                st.divider()
-
-                st.subheader(
-                    "Prediction Result"
-                )
-
-                col1, col2 = st.columns(2)
-
-                with col1:
-
-                    st.metric(
-                        "Predicted Genre",
-                        predicted_genre.title()
-                    )
-
-                with col2:
-
-                    st.metric(
-                        "Confidence",
-                        f"{confidence * 100:.2f}%"
-                    )
-
-                st.divider()
-
-                # -------------------------------------
-                # PROBABILITY DISTRIBUTION
-                # -------------------------------------
-
-                st.subheader(
-                    "Genre Probability Distribution"
-                )
-
-                chart_data = {
-                    "Genre": [
-                        genre.title()
-                        for genre in GENRES
-                    ],
-                    "Probability": predictions
-                }
-
-                st.bar_chart(
-                    chart_data,
-                    x="Genre",
-                    y="Probability"
-                )
-
-                # Ranked results
-                st.subheader(
-                    "Prediction Ranking"
-                )
-
-                ranking = np.argsort(
-                    predictions
-                )[::-1]
-
-                for rank, index in enumerate(
-                    ranking[:5],
-                    start=1
-                ):
-
-                    st.write(
-                        f"{rank}. {GENRES[index].title()} "
-                        f"— {predictions[index] * 100:.2f}%"
-                    )
-
-                st.caption(
-                    "Confidence is the model's predicted probability, "
-                    "not a guarantee of correctness."
-                )
-
             except Exception as error:
-
-                st.error(
-                    "Prediction failed."
-                )
-
+                st.error("Could not process the uploaded audio.")
                 st.exception(error)
+                predictions_by_model, prediction_errors = {}, {}
 
-st.divider()
+        for model_name, error in prediction_errors.items():
+            st.warning(f"{model_name} could not produce a prediction: {error}")
 
-# =====================================================
-# 9. DATASET AND MODEL RESULTS
-# =====================================================
+        if predictions_by_model:
+            prediction_rows = []
+            probability_columns = {}
+            genre_votes = []
+            for model_name, probabilities in predictions_by_model.items():
+                predicted_index = int(np.argmax(probabilities))
+                predicted_genre = GENRES[predicted_index]
+                genre_votes.append(predicted_genre)
+                prediction_rows.append({
+                    "Model": model_name,
+                    "Predicted genre": predicted_genre.title(),
+                    "Confidence": float(probabilities[predicted_index]),
+                    "Runner-up": GENRES[int(np.argsort(probabilities)[-2])].title(),
+                })
+                probability_columns[model_name] = probabilities
 
-st.header("Dataset and Model Results")
-st.caption(
-    "Explore the dataset splits, validation-only tuning trials, and the latest saved test reports."
-)
+            st.divider()
+            st.header("Prediction Comparison")
+            votes = pd.Series(genre_votes).value_counts()
+            consensus_genre = votes.index[0]
+            consensus_count = int(votes.iloc[0])
+            metric_col, consensus_col = st.columns(2)
+            metric_col.metric("Models returned a result", f"{len(predictions_by_model)} / 4")
+            consensus_col.metric("Most common prediction", consensus_genre.title(), f"{consensus_count} of {len(predictions_by_model)} models")
 
-split_rows = []
-split_sizes = {}
-for split_name, csv_name in (
-    ("Train", "train.csv"),
-    ("Validation", "validation.csv"),
-    ("Test", "test.csv"),
-):
-    split_path = PROCESSED_DIR / csv_name
-    if split_path.exists():
-        split_frame = pd.read_csv(split_path)
-        split_sizes[split_name] = len(split_frame)
-        if "genre" in split_frame.columns:
-            counts = split_frame["genre"].value_counts()
-            split_rows.extend(
-                {"Genre": genre, "Split": split_name, "Tracks": int(count)}
-                for genre, count in counts.items()
+            st.subheader("Each model's top prediction")
+            results_frame = pd.DataFrame(prediction_rows)
+            results_frame["Confidence"] = results_frame["Confidence"].map(lambda value: f"{value:.1%}")
+            st.dataframe(results_frame, hide_index=True, use_container_width=True)
+
+            st.subheader("Genre probabilities across all models")
+            probability_frame = pd.DataFrame(
+                probability_columns,
+                index=[genre.title() for genre in GENRES],
             )
+            probability_frame.index.name = "Genre"
+            st.bar_chart(probability_frame)
+            st.caption("Probabilities are averaged across the track's 3-second segments. Confidence is a model score, not a guarantee that the prediction is correct.")
 
-if split_sizes:
-    count_columns = st.columns(3)
-    for column, split_name in zip(count_columns, ("Train", "Validation", "Test")):
-        column.metric(f"{split_name} tracks", f"{split_sizes.get(split_name, 0):,}")
-
-if split_rows:
-    split_chart = pd.DataFrame(split_rows).pivot(
-        index="Genre", columns="Split", values="Tracks"
-    ).reindex(index=GENRES, columns=["Train", "Validation", "Test"]).fillna(0)
-    st.subheader("Tracks per Genre and Split")
-    st.bar_chart(split_chart)
-else:
-    st.info("Dataset split CSVs were not found under data/processed/.")
-
-st.subheader("Learning-Rate Tuning")
-tuning_path = REPORT_DIR / "tuning" / "tuning_summary.csv"
-if tuning_path.exists():
-    tuning_frame = pd.read_csv(tuning_path)
-    tuning_pivot = tuning_frame.pivot(
-        index="learning_rate", columns="model", values="macro_f1"
-    ).sort_index()
-    st.caption("Track-level validation macro F1. The tuning sweep does not use the test split.")
-    st.line_chart(tuning_pivot)
-
-    best_rows = (
-        tuning_frame.sort_values(
-            ["model", "macro_f1", "track_validation_accuracy"],
-            ascending=[True, False, False],
-        )
-        .groupby("model", as_index=False)
-        .first()
-    )
-    st.write("Best validation setting for each model")
-    st.dataframe(
-        best_rows[["model", "learning_rate", "track_validation_accuracy", "macro_f1"]]
-        .rename(columns={
-            "model": "Model",
-            "learning_rate": "Learning rate",
-            "track_validation_accuracy": "Validation accuracy",
-            "macro_f1": "Validation macro F1",
-        }),
-        hide_index=True,
-        use_container_width=True,
-    )
-else:
-    st.info("No tuning summary found. Run `python -m src.tune_models` to create it.")
-
-st.subheader("Latest Saved Test Results")
-st.caption(
-    "Loaded from reports/*_test_metrics.json. After final training with the selected rates, "
-    "rerun model evaluation to refresh these test results."
-)
-
-test_rows = []
-class_f1_rows = []
-available_confusion_matrices = {}
-for model_key, display_name, stem in (
-    ("CNN", "CNN", "cnn"),
-    ("CRNN", "CRNN", "crnn"),
-    ("LSTM", "LSTM", "lstm"),
-    ("Vision Transformer", "ViT", "vit"),
-):
-    metrics_path = REPORT_DIR / f"{stem}_test_metrics.json"
-    if not metrics_path.exists():
-        continue
-    with metrics_path.open("r", encoding="utf-8") as metrics_file:
-        metrics = json.load(metrics_file)
-    report = metrics.get("classification_report", {})
-    macro = report.get("macro avg", {})
-    test_rows.append({
-        "Model": display_name,
-        "Accuracy": metrics.get("test_accuracy"),
-        "Macro F1": macro.get("f1-score"),
-    })
-    for genre in metrics.get("class_names", []):
-        class_f1_rows.append({
-            "Genre": genre,
-            "Model": display_name,
-            "F1": report.get(genre, {}).get("f1-score"),
-        })
-    confusion_path = REPORT_DIR / f"{stem}_confusion_matrix.png"
-    if confusion_path.exists():
-        available_confusion_matrices[display_name] = confusion_path
-
-if test_rows:
-    test_frame = pd.DataFrame(test_rows).set_index("Model")
-    st.bar_chart(test_frame)
-else:
-    st.info("No saved test metric reports were found under reports/.")
-
-if class_f1_rows:
-    class_f1_pivot = pd.DataFrame(class_f1_rows).pivot(
-        index="Genre", columns="Model", values="F1"
-    ).reindex(GENRES)
-    st.subheader("Test F1 by Genre")
-    st.bar_chart(class_f1_pivot)
-
-if available_confusion_matrices:
-    confusion_model = st.selectbox(
-        "Confusion matrix",
-        list(available_confusion_matrices),
-        key="results_confusion_model",
-    )
-    st.image(
-        str(available_confusion_matrices[confusion_model]),
-        caption=f"{confusion_model} saved test confusion matrix",
-        use_container_width=True,
-    )
-
-st.caption(
-    "The prediction selector loads models/*.keras. Tuning checkpoints in models/tuning/ "
-    "are separate; retrain the selected settings to update the app's models."
-)
+            st.subheader("Top three genres per model")
+            top_three_rows = []
+            for model_name, probabilities in predictions_by_model.items():
+                for rank, index in enumerate(np.argsort(probabilities)[::-1][:3], start=1):
+                    top_three_rows.append({
+                        "Model": model_name,
+                        "Rank": rank,
+                        "Genre": GENRES[index].title(),
+                        "Probability": float(probabilities[index]),
+                    })
+            st.dataframe(pd.DataFrame(top_three_rows), hide_index=True, use_container_width=True)
 
 st.divider()
-
-st.caption(
-    "MusicGenre AI | CNN | CRNN | LSTM | Vision Transformer"
-)
+st.caption("MusicGenre AI · CNN · CRNN · LSTM · Vision Transformer")

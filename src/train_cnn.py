@@ -82,10 +82,7 @@ test_paths, test_txt = load_split("test.csv")
 class_names = sorted(set(train_txt) | set(val_txt) | set(test_txt))
 class_to_id = {n: i for i, n in enumerate(class_names)}
 num_classes = len(class_names)
-if num_classes != 10:
-    raise ValueError(f"Expected 10 genres, found {num_classes}: {class_names}")
- 
- 
+
 def encode(labels):
     return np.array([class_to_id[x] for x in labels], dtype=np.int32)
  

@@ -77,7 +77,20 @@ Check that all ten genre folders are detected and that the file counts look reas
 python -m src.prepare_dataset
 ```
 
-The script will:
+### Use the FMA-small dataset
+
+FMA-small audio does not include its genre labels and official train/validation/test split in the audio ZIP. Download and extract the separate `fma_metadata.zip` from the [FMA dataset repository](https://github.com/mdeff/fma), then prepare a balanced subset from the official splits:
+
+```powershell
+python -m src.prepare_fma_dataset `
+  --audio-dir "C:\Users\Kelvin\Downloads\fma_small" `
+  --metadata "C:\Users\Kelvin\Downloads\fma_metadata\tracks.csv" `
+  --max-per-genre 300
+```
+
+This selects up to 300 tracks per top-level genre (up to 2,400 total), retains FMA's official split assignments, and writes the generated features and split CSVs under `data/processed/`. The FMA-small task has eight genres, so retrain all four models after preparing it. Each artist's tracks remain in the same official split to reduce artist leakage. The audio files remain local; check each track's license before redistribution.
+
+For the original GTZAN preprocessing command above, the script will:
 
 - Load audio as mono at 22,050 Hz.
 - Use the first 30 seconds of each track (padding shorter files).

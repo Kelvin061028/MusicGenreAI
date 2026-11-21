@@ -319,7 +319,7 @@ def prepare_model_input(model, mel_db, norm_stats):
 
 
 @st.cache_data(show_spinner=False)
-def predict_uploaded_track(audio_bytes, audio_name, model_versions, norm_stats_json):
+def predict_uploaded_track(audio_bytes, audio_name, model_versions, norm_stats_json, genre_names):
     """Run every available classifier once for this uploaded track."""
     with tempfile.NamedTemporaryFile(
         delete=False,
@@ -357,6 +357,11 @@ def predict_uploaded_track(audio_bytes, audio_name, model_versions, norm_stats_j
             model_input = prepare_model_input(model, mel_db, norm_stats)
             segment_predictions = model.predict(model_input, verbose=0)
             probabilities = np.asarray(segment_predictions).mean(axis=0)
+            if probabilities.shape[-1] != len(genre_names):
+                raise ValueError(
+                    f"{model_name} outputs {probabilities.shape[-1]} classes, "
+                    f"but normalization metadata defines {len(genre_names)} genres."
+                )
             results[model_name] = probabilities.astype(float)
         except Exception as error:
             errors[model_name] = str(error)
@@ -394,7 +399,9 @@ if uploaded_file is not None:
             st.warning("Missing model checkpoints: " + ", ".join(missing_models))
 
         with NORM_STATS_PATH.open("r", encoding="utf-8") as stats_file:
-            norm_stats_json = json.dumps(json.load(stats_file), sort_keys=True)
+            norm_stats = json.load(stats_file)
+        genre_names = norm_stats.get("class_names", GENRES)
+        norm_stats_json = json.dumps(norm_stats, sort_keys=True)
         model_versions = {
             name: (MODEL_DIR / filename).stat().st_mtime_ns
             for name, filename in MODEL_FILES.items()
@@ -408,6 +415,7 @@ if uploaded_file is not None:
                     uploaded_file.name,
                     model_versions,
                     norm_stats_json,
+                    genre_names,
                 )
             except Exception as error:
                 st.error("Could not process the uploaded audio.")
@@ -423,13 +431,13 @@ if uploaded_file is not None:
             genre_votes = []
             for model_name, probabilities in predictions_by_model.items():
                 predicted_index = int(np.argmax(probabilities))
-                predicted_genre = GENRES[predicted_index]
+                predicted_genre = genre_names[predicted_index]
                 genre_votes.append(predicted_genre)
                 prediction_rows.append({
                     "Model": model_name,
                     "Predicted genre": predicted_genre.title(),
                     "Confidence": float(probabilities[predicted_index]),
-                    "Runner-up": GENRES[int(np.argsort(probabilities)[-2])].title(),
+                    "Runner-up": genre_names[int(np.argsort(probabilities)[-2])].title(),
                 })
                 probability_columns[model_name] = probabilities
 
@@ -450,7 +458,7 @@ if uploaded_file is not None:
             st.subheader("Genre probabilities across all models")
             probability_frame = pd.DataFrame(
                 probability_columns,
-                index=[genre.title() for genre in GENRES],
+                index=[genre.title() for genre in genre_names],
             )
             probability_frame.index.name = "Genre"
             st.bar_chart(probability_frame)
@@ -463,7 +471,7 @@ if uploaded_file is not None:
                     top_three_rows.append({
                         "Model": model_name,
                         "Rank": rank,
-                        "Genre": GENRES[index].title(),
+                        "Genre": genre_names[index].title(),
                         "Probability": float(probabilities[index]),
                     })
             st.dataframe(pd.DataFrame(top_three_rows), hide_index=True, use_container_width=True)

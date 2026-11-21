@@ -31,7 +31,7 @@ CLIP_SECONDS = 30
 SEGMENT_SECONDS = 3
 CROPS_PER_TRACK = 6
 # ---------------------------------------------------------- MODEL-SPECIFIC SETTINGS
-LEARNING_RATE = float(os.environ.get("MUSICGENRE_LEARNING_RATE", "5e-4"))
+LEARNING_RATE = float(os.environ.get("MUSICGENRE_LEARNING_RATE", "1e-3"))  # FMA validation choice
 
 tf.keras.utils.set_random_seed(SEED)
 rng = np.random.default_rng(SEED)

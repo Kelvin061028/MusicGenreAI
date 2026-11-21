@@ -45,7 +45,7 @@ CLIP_SECONDS = 30
 SEGMENT_SECONDS = 3
 CROPS_PER_TRACK = 6
 # ---------------------------------------------------------- MODEL-SPECIFIC SETTINGS
-LEARNING_RATE = float(os.environ.get("MUSICGENRE_LEARNING_RATE", "5e-4"))
+LEARNING_RATE = float(os.environ.get("MUSICGENRE_LEARNING_RATE", "5e-4"))  # FMA validation choice
 POOL_SIZE = 4          # time pooling before the LSTM (same value as your original)
 
 tf.keras.utils.set_random_seed(SEED)

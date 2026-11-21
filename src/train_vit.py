@@ -31,7 +31,7 @@ CLIP_SECONDS = 30
 SEGMENT_SECONDS = 3
 CROPS_PER_TRACK = 6
 # ---------------------------------------------------------- MODEL-SPECIFIC SETTINGS
-LEARNING_RATE = float(os.environ.get("MUSICGENRE_LEARNING_RATE", "5e-4"))
+LEARNING_RATE = float(os.environ.get("MUSICGENRE_LEARNING_RATE", "5e-4"))  # FMA validation choice
 IMAGE_HEIGHT = 128     # spectrogram is resized to (128 x 128) before patching
 IMAGE_WIDTH = 128      # (3s crop is ~129 frames wide, so this is almost no distortion)
 PATCH_SIZE = 16

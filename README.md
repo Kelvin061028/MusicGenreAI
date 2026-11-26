@@ -162,7 +162,7 @@ The completed GTZAN sweep selected these learning rates and track-level validati
 
 Full trial records are in `reports/tuning/`. The final checkpoints are in `models/`.
 
-Architecture tuning is available for the requested settings: CNN filter width/dropout/L2; CRNN filter width, both BiLSTM widths and recurrent dropout; ViT depth, attention heads, dropout and L2; and LSTM pooling, recurrent widths, dropout and L2. The full search runs four targeted configurations per model and ranks them by validation macro F1, with accuracy as the tie-breaker:
+Architecture tuning is available for the requested settings: CNN filter width/dropout/L2; CRNN filter width, both BiLSTM widths and recurrent dropout; ViT depth, attention heads, dropout and L2; and LSTM pooling, recurrent widths, dropout and L2. The full search runs four to five targeted configurations per model and ranks them by validation macro F1, with accuracy as the tie-breaker:
 
 ```powershell
 python -m src.tune_architectures --epochs 20 --patience 5 --crops-per-track 6

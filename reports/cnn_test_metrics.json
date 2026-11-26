@@ -1,7 +1,7 @@
 {
-  "segment_test_loss": 0.9098608493804932,
-  "segment_test_accuracy": 0.795364260673523,
-  "track_test_accuracy": 0.8344370860927153,
+  "model": "CNN",
+  "evaluation_split": "GTZAN held-out test",
+  "test_tracks": 151,
   "test_accuracy": 0.8344370860927153,
   "class_names": [
     "blues",

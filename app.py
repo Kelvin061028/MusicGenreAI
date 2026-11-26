@@ -6,6 +6,7 @@ import pandas as pd
 import librosa
 import tempfile
 import json
+from datetime import datetime
 
 from pathlib import Path
 
@@ -319,8 +320,8 @@ def prepare_model_input(model, mel_db, norm_stats):
 
 
 @st.cache_data(show_spinner=False)
-def predict_uploaded_track(audio_bytes, audio_name, model_versions, norm_stats_json, genre_names):
-    """Run every available classifier once for this uploaded track."""
+def predict_uploaded_track(audio_bytes, audio_name, model_versions, norm_stats_json, genre_names, selected_models):
+    """Run selected classifiers and the CNN+CRNN probability ensemble."""
     with tempfile.NamedTemporaryFile(
         delete=False,
         suffix=Path(audio_name).suffix,
@@ -348,6 +349,8 @@ def predict_uploaded_track(audio_bytes, audio_name, model_versions, norm_stats_j
     results = {}
     errors = {}
     for model_name, filename in MODEL_FILES.items():
+        if model_name not in selected_models:
+            continue
         model_path = MODEL_DIR / filename
         if not model_path.exists():
             errors[model_name] = f"Checkpoint not found: {filename}"
@@ -366,6 +369,8 @@ def predict_uploaded_track(audio_bytes, audio_name, model_versions, norm_stats_j
         except Exception as error:
             errors[model_name] = str(error)
 
+    if "CNN" in results and "CRNN" in results:
+        results["CNN + CRNN Ensemble"] = ((results["CNN"] + results["CRNN"]) / 2).astype(float)
     return results, errors
 
 
@@ -376,7 +381,7 @@ def predict_uploaded_track(audio_bytes, audio_name, model_versions, norm_stats_j
 st.set_page_config(page_title="MusicGenre AI", page_icon="🎵", layout="wide")
 st.title("🎵 MusicGenre AI")
 st.subheader("Music Genre Classification Using Deep Learning")
-st.write("Upload one track to compare its predictions from CNN, CRNN, LSTM, and Vision Transformer.")
+st.write("Upload a track, choose which classifiers to compare, and review the predictions and probability scores.")
 
 uploaded_file = st.file_uploader(
     "Upload a music file",
@@ -387,6 +392,10 @@ if uploaded_file is not None:
     audio_bytes = uploaded_file.getvalue()
     st.audio(audio_bytes, format=uploaded_file.type)
     st.caption(f"Uploaded track: {uploaded_file.name} · predictions use up to the first {DURATION} seconds.")
+    selected_models = st.multiselect(
+        "Models to run", list(MODEL_FILES), default=list(MODEL_FILES),
+        help="The CNN + CRNN ensemble is added automatically when both models are selected.",
+    )
 
     if not NORM_STATS_PATH.exists():
         st.error(f"Training normalization stats not found: {NORM_STATS_PATH}")
@@ -408,7 +417,7 @@ if uploaded_file is not None:
             if (MODEL_DIR / filename).exists()
         }
 
-        with st.spinner("Running the uploaded track through all available models..."):
+        with st.spinner("Running the selected models..."):
             try:
                 predictions_by_model, prediction_errors = predict_uploaded_track(
                     audio_bytes,
@@ -416,6 +425,7 @@ if uploaded_file is not None:
                     model_versions,
                     norm_stats_json,
                     genre_names,
+                    selected_models,
                 )
             except Exception as error:
                 st.error("Could not process the uploaded audio.")
@@ -443,12 +453,14 @@ if uploaded_file is not None:
 
             st.divider()
             st.header("Prediction Comparison")
-            votes = pd.Series(genre_votes).value_counts()
-            consensus_genre = votes.index[0]
-            consensus_count = int(votes.iloc[0])
             metric_col, consensus_col = st.columns(2)
-            metric_col.metric("Models returned a result", f"{len(predictions_by_model)} / 4")
-            consensus_col.metric("Most common prediction", consensus_genre.title(), f"{consensus_count} of {len(predictions_by_model)} models")
+            metric_col.metric("Models returned a result", f"{len(predictions_by_model)}")
+            ensemble = predictions_by_model.get("CNN + CRNN Ensemble")
+            if ensemble is not None:
+                consensus_col.metric("CNN + CRNN ensemble", genre_names[int(np.argmax(ensemble))].title(), f"{float(np.max(ensemble)):.1%} score")
+            elif genre_votes:
+                votes = pd.Series(genre_votes).value_counts()
+                consensus_col.metric("Most common prediction", votes.index[0].title(), f"{int(votes.iloc[0])} votes")
 
             st.subheader("Each model's top prediction")
             results_frame = pd.DataFrame(prediction_rows)
@@ -475,6 +487,33 @@ if uploaded_file is not None:
                         "Probability": float(probabilities[index]),
                     })
             st.dataframe(pd.DataFrame(top_three_rows), hide_index=True, use_container_width=True)
+
+            # Keep a compact record of predictions in this browser session only.
+            signature = f"{uploaded_file.name}:{hash(audio_bytes)}:{','.join(selected_models)}"
+            if st.session_state.get("last_prediction_signature") != signature:
+                st.session_state.setdefault("prediction_history", []).insert(0, {
+                    "Time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    "Track": uploaded_file.name,
+                    "Models": ", ".join(predictions_by_model),
+                    "Predictions": " | ".join(
+                        f"{row['Model']}: {row['Predicted genre']} ({row['Confidence']:.1%})"
+                        for row in prediction_rows
+                    ),
+                })
+                st.session_state.prediction_history = st.session_state.prediction_history[:20]
+                st.session_state.last_prediction_signature = signature
+
+st.divider()
+st.header("Recent prediction history")
+history = st.session_state.get("prediction_history", [])
+if history:
+    st.dataframe(pd.DataFrame(history), hide_index=True, use_container_width=True)
+    if st.button("Clear history"):
+        st.session_state.prediction_history = []
+        st.session_state.pop("last_prediction_signature", None)
+        st.rerun()
+else:
+    st.caption("Predictions from this browser session will appear here (up to 20 records).")
 
 st.divider()
 st.caption("MusicGenre AI · CNN · CRNN · LSTM · Vision Transformer")

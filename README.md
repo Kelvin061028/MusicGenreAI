@@ -129,7 +129,11 @@ Split by original track before creating any smaller windows or augmented version
 
 All four models will use the same track-level split and evaluation metrics. Model-specific input transformations will be documented so comparisons remain fair.
 
-## Part B: validation-only hyperparameter tuning
+## Part B: development sequence
+
+The active experiment uses GTZAN. The four phases below keep tuning on the validation split and reserve the held-out test split for the final comparison.
+
+### Phase 1 — Model optimization
 
 Run a small learning-rate sweep for all four models from the project root:
 
@@ -147,7 +151,52 @@ To tune only selected models or use a different small candidate set:
 python -m src.tune_models --models cnn crnn --learning-rates 0.0001 0.0005 0.001
 ```
 
-Review `reports/tuning/best_configurations.json` and `reports/tuning/validation_macro_f1_by_learning_rate.png`. Then retrain each selected model at its chosen learning rate without tuning mode, and run its normal evaluation once on the test split. Use the PowerShell environment variable `MUSICGENRE_LEARNING_RATE` to set that model's selected rate for the final run.
+The completed GTZAN sweep selected these learning rates and track-level validation results:
+
+| Model | Selected learning rate | Validation accuracy | Validation macro F1 |
+|---|---:|---:|---:|
+| CNN | 0.0005 | 84.56% | 0.8460 |
+| CRNN | 0.0005 | 81.88% | 0.8207 |
+| LSTM | 0.001 | 72.48% | 0.7195 |
+| ViT | 0.0005 | 72.48% | 0.7309 |
+
+Full trial records are in `reports/tuning/`. The final checkpoints are in `models/`.
+
+### Phase 2 — Ensemble learning
+
+The final evaluation script builds an equal-weight probability average from the CNN and CRNN outputs and compares it with each individual model. This is a fixed, transparent ensemble; the test set is not used to choose its weights.
+
+### Phase 3 — System development
+
+Run the Streamlit application:
+
+```powershell
+streamlit run app.py
+```
+
+Upload one track, choose any of the four classifiers, and view their genre probabilities and top-three results. When both CNN and CRNN are selected, the app also shows their ensemble. The app keeps up to 20 predictions in session history; clearing or ending the session removes that history.
+
+### Phase 4 — Final evaluation
+
+After final training is complete, evaluate the saved checkpoints against the held-out GTZAN test split:
+
+```powershell
+python -m src.evaluate_final
+```
+
+The script writes track-level accuracy, macro F1, weighted F1, per-class reports, confusion-matrix charts, and a model-comparison chart under `reports/`. It does not tune against the test split.
+
+Latest final evaluation (151 held-out test tracks):
+
+| Model | Test accuracy | Macro F1 |
+|---|---:|---:|
+| CNN | 83.44% | 0.8279 |
+| CNN + CRNN ensemble | 82.78% | 0.8141 |
+| CRNN | 80.79% | 0.7974 |
+| ViT | 80.13% | 0.7972 |
+| LSTM | 68.87% | 0.6703 |
+
+The equal-weight ensemble did not outperform the CNN on this split. Keep it as a comparison option in the app and report this outcome as-is; do not claim that ensembling improved accuracy.
 
 Generate the baseline model comparison charts and table with:
 
@@ -159,12 +208,8 @@ This produces accuracy, macro F1, per-genre F1, and training-history comparisons
 
 ## Current status
 
-- [x] Project structure and configuration
-- [x] Dataset inspection script
-- [x] Log-Mel preprocessing script
-- [ ] Run preprocessing on the downloaded dataset
-- [ ] Implement and train CNN
-- [ ] Implement and train CRNN
-- [ ] Implement and train LSTM
-- [ ] Implement and train ViT
-- [ ] Compare models and build the application
+- [x] GTZAN train/validation/test split and feature preparation
+- [x] Tune and train CNN, CRNN, LSTM and ViT
+- [x] Compare CNN+CRNN ensemble against individual models
+- [x] Streamlit upload, model selection, probability charts and session history
+- [x] Final held-out test evaluation and comparison charts

@@ -7,6 +7,11 @@ import tensorflow as tf
 import matplotlib.pyplot as plt
 from sklearn.metrics import classification_report, confusion_matrix, ConfusionMatrixDisplay
 
+GPU_DEVICES = tf.config.list_physical_devices("GPU")
+for _gpu in GPU_DEVICES:
+    tf.config.experimental.set_memory_growth(_gpu, True)
+print("TensorFlow GPU devices:", [device.name for device in GPU_DEVICES] or "none (CPU mode)")
+
 ROOT = Path(__file__).resolve().parents[1]
 DATA_DIR = ROOT / "data" / "processed"
 FEATURE_DIR = DATA_DIR / "log_mel"
@@ -26,10 +31,16 @@ BATCH_SIZE = 32
 EPOCHS = int(os.environ.get("MUSICGENRE_EPOCHS", "80"))
 EARLY_STOPPING_PATIENCE = int(os.environ.get("MUSICGENRE_EARLY_STOPPING_PATIENCE", "14"))
 LR_PATIENCE = int(os.environ.get("MUSICGENRE_LR_PATIENCE", "5"))
-L2 = 1e-4
+L2 = float(os.environ.get("MUSICGENRE_L2", "1e-4"))
+FILTER_BASE = int(os.environ.get("MUSICGENRE_FILTER_BASE", "32"))
+DROPOUT = float(os.environ.get("MUSICGENRE_DROPOUT", "0.25"))
+HEAD_DROPOUT = float(os.environ.get("MUSICGENRE_HEAD_DROPOUT", "0.5"))
+RNN_UNITS_1 = int(os.environ.get("MUSICGENRE_RNN_UNITS_1", "96"))
+RNN_UNITS_2 = int(os.environ.get("MUSICGENRE_RNN_UNITS_2", "64"))
+RNN_DROPOUT = float(os.environ.get("MUSICGENRE_RNN_DROPOUT", "0.2"))
 CLIP_SECONDS = 30
 SEGMENT_SECONDS = 3
-CROPS_PER_TRACK = 6
+CROPS_PER_TRACK = int(os.environ.get("MUSICGENRE_CROPS_PER_TRACK", "6"))
 # ---------------------------------------------------------- MODEL-SPECIFIC SETTINGS
 LEARNING_RATE = float(os.environ.get("MUSICGENRE_LEARNING_RATE", "5e-4"))  # GTZAN validation choice
 
@@ -145,8 +156,9 @@ def train_generator():
     n = len(X_train)
     while True:
         for i in rng.permutation(n):
-            start = rng.integers(0, N_FRAMES - SEG + 1)
-            yield X_train[i, :, start:start + SEG, :], y_train[i]
+            for _ in range(CROPS_PER_TRACK):
+                start = rng.integers(0, N_FRAMES - SEG + 1)
+                yield X_train[i, :, start:start + SEG, :], y_train[i]
 
 
 train_ds = (
@@ -205,12 +217,12 @@ def build_crnn(input_shape, classes):
 
     # Same conv front-end as the CNN (4 blocks x 2 convs). The last block pools
     # frequency only, so the LSTM still receives SEG/8 time steps.
-    for i, filters in enumerate((32, 64, 128, 256)):
+    for i, filters in enumerate((FILTER_BASE, FILTER_BASE * 2, FILTER_BASE * 4, FILTER_BASE * 8)):
         x = conv_bn_relu(x, filters)
         x = conv_bn_relu(x, filters)
         pool = (2, 2) if i < 3 else (2, 1)
         x = tf.keras.layers.MaxPooling2D(pool_size=pool)(x)
-        x = tf.keras.layers.Dropout(0.25)(x)
+        x = tf.keras.layers.Dropout(DROPOUT)(x)
 
     # (freq, time, ch) -> (time, freq*ch)
     x = tf.keras.layers.Permute((2, 1, 3))(x)
@@ -219,16 +231,16 @@ def build_crnn(input_shape, classes):
 
     # Recurrent head
     x = tf.keras.layers.Bidirectional(
-        tf.keras.layers.LSTM(96, return_sequences=True, dropout=0.2,
+        tf.keras.layers.LSTM(RNN_UNITS_1, return_sequences=True, dropout=RNN_DROPOUT,
                              kernel_regularizer=tf.keras.regularizers.l2(L2)))(x)
     x = tf.keras.layers.Bidirectional(
-        tf.keras.layers.LSTM(64, dropout=0.2,
+        tf.keras.layers.LSTM(RNN_UNITS_2, dropout=RNN_DROPOUT,
                              kernel_regularizer=tf.keras.regularizers.l2(L2)))(x)
 
     # Same classifier head as the CNN
     x = tf.keras.layers.Dense(128, activation="relu",
                               kernel_regularizer=tf.keras.regularizers.l2(L2))(x)
-    x = tf.keras.layers.Dropout(0.5)(x)
+    x = tf.keras.layers.Dropout(HEAD_DROPOUT)(x)
     outputs = tf.keras.layers.Dense(classes, activation="softmax", name="genre_probabilities")(x)
 
     model = tf.keras.Model(inputs, outputs, name="MusicGenre_CRNN_v2")
@@ -277,6 +289,10 @@ if os.environ.get("MUSICGENRE_TUNING_MODE") == "1":
     with open(ARTIFACT_REPORT_DIR / "validation_metrics.json", "w", encoding="utf-8") as f:
         json.dump({
             "learning_rate": LEARNING_RATE,
+            "model_config": {"filter_base": FILTER_BASE, "dropout": DROPOUT,
+                             "head_dropout": HEAD_DROPOUT, "rnn_units_1": RNN_UNITS_1,
+                             "rnn_units_2": RNN_UNITS_2, "rnn_dropout": RNN_DROPOUT,
+                             "l2": L2},
             "track_validation_accuracy": float(np.mean(val_predictions == y_val)),
             "macro_f1": float(val_report["macro avg"]["f1-score"]),
             "classification_report": val_report,

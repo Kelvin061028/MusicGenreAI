@@ -162,6 +162,45 @@ The completed GTZAN sweep selected these learning rates and track-level validati
 
 Full trial records are in `reports/tuning/`. The final checkpoints are in `models/`.
 
+Architecture tuning is available for the requested settings: CNN filter width/dropout/L2; CRNN filter width, both BiLSTM widths and recurrent dropout; ViT depth, attention heads, dropout and L2; and LSTM pooling, recurrent widths, dropout and L2. The full search runs four targeted configurations per model and ranks them by validation macro F1, with accuracy as the tie-breaker:
+
+```powershell
+python -m src.tune_architectures --epochs 20 --patience 5 --crops-per-track 6
+```
+
+This keeps the six-crop training exposure used for final training. For a faster screening pass, you can reduce the per-epoch crops and epoch cap:
+
+```powershell
+python -m src.tune_architectures --epochs 10 --patience 4 --crops-per-track 1
+```
+
+Trial results are written to `reports/tuning/architecture_tuning_summary.csv`; the selected validation configurations go to `reports/tuning/best_architectures.json`. Retrain all four final checkpoints with the selected settings, the normal six-crop protocol, and up to 80 epochs, then run the held-out test evaluation:
+
+```powershell
+python -m src.train_best_architectures
+```
+
+The short search is only a screening pass, not a substitute for the full search or final training.
+
+### GPU training on Windows with WSL2
+
+The native Windows TensorFlow build in the project's `.venv` is CPU-only. The existing `.venv_wsl` was created with Python 3.14, which is outside the Python versions supported by the current TensorFlow wheel. Create a fresh WSL2 environment with a supported Python version (3.10–3.13) and the GPU-enabled TensorFlow extra:
+
+```powershell
+wsl
+cd /mnt/c/Users/Kelvin/Downloads/MusicGenreAI_Week1_Starter/MusicGenreAI
+python3.12 -m venv .venv_gpu
+source .venv_gpu/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -r requirements-gpu.txt
+nvidia-smi
+python -c "import tensorflow as tf; print(tf.config.list_physical_devices('GPU'))"
+python -m src.tune_architectures --epochs 20 --patience 5 --crops-per-track 6
+python -m src.train_best_architectures
+```
+
+If `python3.12` is not installed in WSL, install a supported Python version first or substitute an installed Python 3.10–3.13 executable. Confirm `nvidia-smi` works and the TensorFlow GPU list is non-empty before starting the sweep. Each training script prints the detected TensorFlow GPU devices and enables memory growth to fit within available VRAM.
+
 ### Phase 2 — Ensemble learning
 
 The final evaluation script builds an equal-weight probability average from the CNN and CRNN outputs and compares it with each individual model. This is a fixed, transparent ensemble; the test set is not used to choose its weights.

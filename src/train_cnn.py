@@ -6,6 +6,11 @@ import pandas as pd
 import tensorflow as tf
 import matplotlib.pyplot as plt
 from sklearn.metrics import classification_report, confusion_matrix, ConfusionMatrixDisplay
+
+GPU_DEVICES = tf.config.list_physical_devices("GPU")
+for _gpu in GPU_DEVICES:
+    tf.config.experimental.set_memory_growth(_gpu, True)
+print("TensorFlow GPU devices:", [device.name for device in GPU_DEVICES] or "none (CPU mode)")
  
 ROOT = Path(__file__).resolve().parents[1]
 DATA_DIR = ROOT / "data" / "processed"
@@ -26,10 +31,13 @@ EPOCHS = int(os.environ.get("MUSICGENRE_EPOCHS", "80"))
 EARLY_STOPPING_PATIENCE = int(os.environ.get("MUSICGENRE_EARLY_STOPPING_PATIENCE", "14"))
 LR_PATIENCE = int(os.environ.get("MUSICGENRE_LR_PATIENCE", "5"))
 LEARNING_RATE = float(os.environ.get("MUSICGENRE_LEARNING_RATE", "5e-4"))  # GTZAN validation choice
-L2 = 1e-4
+L2 = float(os.environ.get("MUSICGENRE_L2", "1e-4"))
+FILTER_BASE = int(os.environ.get("MUSICGENRE_FILTER_BASE", "32"))
+DROPOUT = float(os.environ.get("MUSICGENRE_DROPOUT", "0.25"))
+HEAD_DROPOUT = float(os.environ.get("MUSICGENRE_HEAD_DROPOUT", "0.5"))
 CLIP_SECONDS = 30      # GTZAN clip length
 SEGMENT_SECONDS = 3    # crop length fed to the CNN
-CROPS_PER_TRACK = 6    # random crops per track per epoch
+CROPS_PER_TRACK = int(os.environ.get("MUSICGENRE_CROPS_PER_TRACK", "6"))
  
 tf.keras.utils.set_random_seed(SEED)
 rng = np.random.default_rng(SEED)
@@ -144,7 +152,7 @@ def train_generator():
     n = len(X_train)
     while True:
         for i in rng.permutation(n):
-            for _ in range(1):
+            for _ in range(CROPS_PER_TRACK):
                 start = rng.integers(0, N_FRAMES - SEG + 1)
                 yield X_train[i, :, start:start + SEG, :], y_train[i]
  
@@ -202,17 +210,17 @@ def conv_bn_relu(x, filters):
 def build_cnn(input_shape, classes):
     inputs = tf.keras.Input(shape=input_shape, name="log_mel_spectrogram")
     x = SpecAugment(freq_mask=max(4, N_MELS // 8), time_mask=max(4, SEG // 8), name="spec_augment")(inputs)
-    for filters in (32, 64, 128, 256):
+    for filters in (FILTER_BASE, FILTER_BASE * 2, FILTER_BASE * 4, FILTER_BASE * 8):
         x = conv_bn_relu(x, filters)
         x = conv_bn_relu(x, filters)
         x = tf.keras.layers.MaxPooling2D(pool_size=(2, 2))(x)
-        x = tf.keras.layers.Dropout(0.25)(x)
+        x = tf.keras.layers.Dropout(DROPOUT)(x)
     avg = tf.keras.layers.GlobalAveragePooling2D()(x)
     mx = tf.keras.layers.GlobalMaxPooling2D()(x)
     x = tf.keras.layers.Concatenate()([avg, mx])
     x = tf.keras.layers.Dense(128, activation="relu",
                               kernel_regularizer=tf.keras.regularizers.l2(L2))(x)
-    x = tf.keras.layers.Dropout(0.5)(x)
+    x = tf.keras.layers.Dropout(HEAD_DROPOUT)(x)
     outputs = tf.keras.layers.Dense(classes, activation="softmax", name="genre_probabilities")(x)
     model = tf.keras.Model(inputs, outputs, name="MusicGenre_CNN_v2")
     model.compile(
@@ -260,6 +268,8 @@ if os.environ.get("MUSICGENRE_TUNING_MODE") == "1":
     with open(ARTIFACT_REPORT_DIR / "validation_metrics.json", "w", encoding="utf-8") as f:
         json.dump({
             "learning_rate": LEARNING_RATE,
+            "model_config": {"filter_base": FILTER_BASE, "dropout": DROPOUT,
+                             "head_dropout": HEAD_DROPOUT, "l2": L2},
             "track_validation_accuracy": float(np.mean(val_predictions == y_val)),
             "macro_f1": float(val_report["macro avg"]["f1-score"]),
             "classification_report": val_report,

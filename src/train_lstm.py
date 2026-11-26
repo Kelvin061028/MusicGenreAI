@@ -21,6 +21,11 @@ import tensorflow as tf
 import matplotlib.pyplot as plt
 from sklearn.metrics import classification_report, confusion_matrix, ConfusionMatrixDisplay
 
+GPU_DEVICES = tf.config.list_physical_devices("GPU")
+for _gpu in GPU_DEVICES:
+    tf.config.experimental.set_memory_growth(_gpu, True)
+print("TensorFlow GPU devices:", [device.name for device in GPU_DEVICES] or "none (CPU mode)")
+
 ROOT = Path(__file__).resolve().parents[1]
 DATA_DIR = ROOT / "data" / "processed"
 FEATURE_DIR = DATA_DIR / "log_mel"
@@ -40,13 +45,17 @@ BATCH_SIZE = 32
 EPOCHS = int(os.environ.get("MUSICGENRE_EPOCHS", "80"))
 EARLY_STOPPING_PATIENCE = int(os.environ.get("MUSICGENRE_EARLY_STOPPING_PATIENCE", "14"))
 LR_PATIENCE = int(os.environ.get("MUSICGENRE_LR_PATIENCE", "5"))
-L2 = 1e-4
+L2 = float(os.environ.get("MUSICGENRE_L2", "1e-4"))
 CLIP_SECONDS = 30
 SEGMENT_SECONDS = 3
-CROPS_PER_TRACK = 6
+CROPS_PER_TRACK = int(os.environ.get("MUSICGENRE_CROPS_PER_TRACK", "6"))
 # ---------------------------------------------------------- MODEL-SPECIFIC SETTINGS
 LEARNING_RATE = float(os.environ.get("MUSICGENRE_LEARNING_RATE", "1e-3"))  # GTZAN validation choice
-POOL_SIZE = 4          # time pooling before the LSTM (same value as your original)
+POOL_SIZE = int(os.environ.get("MUSICGENRE_POOL_SIZE", "4"))
+LSTM_UNITS_1 = int(os.environ.get("MUSICGENRE_LSTM_UNITS_1", "64"))
+LSTM_UNITS_2 = int(os.environ.get("MUSICGENRE_LSTM_UNITS_2", "64"))
+DROPOUT = float(os.environ.get("MUSICGENRE_DROPOUT", "0.3"))
+HEAD_DROPOUT = float(os.environ.get("MUSICGENRE_HEAD_DROPOUT", "0.5"))
 
 tf.keras.utils.set_random_seed(SEED)
 rng = np.random.default_rng(SEED)
@@ -160,8 +169,9 @@ def train_generator():
     n = len(X_train)
     while True:
         for i in rng.permutation(n):
-            start = rng.integers(0, N_FRAMES - SEG + 1)
-            yield X_train[i, :, start:start + SEG, :], y_train[i]
+            for _ in range(CROPS_PER_TRACK):
+                start = rng.integers(0, N_FRAMES - SEG + 1)
+                yield X_train[i, :, start:start + SEG, :], y_train[i]
 
 
 train_ds = (
@@ -218,13 +228,13 @@ def build_lstm(input_shape, classes):
     # Shorten the sequence (same pooling idea as your original script)
     x = tf.keras.layers.AveragePooling1D(pool_size=POOL_SIZE)(x)
 
-    x = tf.keras.layers.LSTM(64, return_sequences=True, kernel_regularizer=reg)(x)
-    x = tf.keras.layers.Dropout(0.3)(x)
-    x = tf.keras.layers.LSTM(64, kernel_regularizer=reg)(x)
+    x = tf.keras.layers.LSTM(LSTM_UNITS_1, return_sequences=True, kernel_regularizer=reg)(x)
+    x = tf.keras.layers.Dropout(DROPOUT)(x)
+    x = tf.keras.layers.LSTM(LSTM_UNITS_2, kernel_regularizer=reg)(x)
 
     # Same classifier head as the CNN / CRNN
     x = tf.keras.layers.Dense(128, activation="relu", kernel_regularizer=reg)(x)
-    x = tf.keras.layers.Dropout(0.5)(x)
+    x = tf.keras.layers.Dropout(HEAD_DROPOUT)(x)
     outputs = tf.keras.layers.Dense(classes, activation="softmax", name="genre_probabilities")(x)
 
     model = tf.keras.Model(inputs, outputs, name="MusicGenre_LSTM_v2")
@@ -273,6 +283,9 @@ if os.environ.get("MUSICGENRE_TUNING_MODE") == "1":
     with open(ARTIFACT_REPORT_DIR / "validation_metrics.json", "w", encoding="utf-8") as f:
         json.dump({
             "learning_rate": LEARNING_RATE,
+            "model_config": {"pool_size": POOL_SIZE, "lstm_units_1": LSTM_UNITS_1,
+                             "lstm_units_2": LSTM_UNITS_2, "dropout": DROPOUT,
+                             "head_dropout": HEAD_DROPOUT, "l2": L2},
             "track_validation_accuracy": float(np.mean(val_predictions == y_val)),
             "macro_f1": float(val_report["macro avg"]["f1-score"]),
             "classification_report": val_report,

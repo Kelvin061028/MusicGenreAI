@@ -7,6 +7,11 @@ import tensorflow as tf
 import matplotlib.pyplot as plt
 from sklearn.metrics import classification_report, confusion_matrix, ConfusionMatrixDisplay
 
+GPU_DEVICES = tf.config.list_physical_devices("GPU")
+for _gpu in GPU_DEVICES:
+    tf.config.experimental.set_memory_growth(_gpu, True)
+print("TensorFlow GPU devices:", [device.name for device in GPU_DEVICES] or "none (CPU mode)")
+
 ROOT = Path(__file__).resolve().parents[1]
 DATA_DIR = ROOT / "data" / "processed"
 FEATURE_DIR = DATA_DIR / "log_mel"
@@ -26,10 +31,10 @@ BATCH_SIZE = 32
 EPOCHS = int(os.environ.get("MUSICGENRE_EPOCHS", "80"))
 EARLY_STOPPING_PATIENCE = int(os.environ.get("MUSICGENRE_EARLY_STOPPING_PATIENCE", "14"))
 LR_PATIENCE = int(os.environ.get("MUSICGENRE_LR_PATIENCE", "5"))
-L2 = 1e-4
+L2 = float(os.environ.get("MUSICGENRE_L2", "1e-4"))
 CLIP_SECONDS = 30
 SEGMENT_SECONDS = 3
-CROPS_PER_TRACK = 6
+CROPS_PER_TRACK = int(os.environ.get("MUSICGENRE_CROPS_PER_TRACK", "6"))
 # ---------------------------------------------------------- MODEL-SPECIFIC SETTINGS
 LEARNING_RATE = float(os.environ.get("MUSICGENRE_LEARNING_RATE", "5e-4"))  # GTZAN validation choice
 IMAGE_HEIGHT = 128     # spectrogram is resized to (128 x 128) before patching
@@ -37,9 +42,11 @@ IMAGE_WIDTH = 128      # (3s crop is ~129 frames wide, so this is almost no dist
 PATCH_SIZE = 16
 NUM_PATCHES = (IMAGE_HEIGHT // PATCH_SIZE) * (IMAGE_WIDTH // PATCH_SIZE)  # 8 x 8 = 64
 PROJECTION_DIM = 128
-NUM_HEADS = 4
-TRANSFORMER_LAYERS = 4
-MLP_DIM = 256
+NUM_HEADS = int(os.environ.get("MUSICGENRE_NUM_HEADS", "4"))
+TRANSFORMER_LAYERS = int(os.environ.get("MUSICGENRE_TRANSFORMER_LAYERS", "4"))
+MLP_DIM = int(os.environ.get("MUSICGENRE_MLP_DIM", "256"))
+DROPOUT = float(os.environ.get("MUSICGENRE_DROPOUT", "0.1"))
+HEAD_DROPOUT = float(os.environ.get("MUSICGENRE_HEAD_DROPOUT", "0.5"))
 
 tf.keras.utils.set_random_seed(SEED)
 rng = np.random.default_rng(SEED)
@@ -153,8 +160,9 @@ def train_generator():
     n = len(X_train)
     while True:
         for i in rng.permutation(n):
-            start = rng.integers(0, N_FRAMES - SEG + 1)
-            yield X_train[i, :, start:start + SEG, :], y_train[i]
+            for _ in range(CROPS_PER_TRACK):
+                start = rng.integers(0, N_FRAMES - SEG + 1)
+                yield X_train[i, :, start:start + SEG, :], y_train[i]
 
 
 train_ds = (
@@ -239,15 +247,15 @@ def transformer_block(inputs, num_heads, projection_dim, mlp_dim):
     h = tf.keras.layers.LayerNormalization(epsilon=1e-6)(inputs)
     h = tf.keras.layers.MultiHeadAttention(
         num_heads=num_heads, key_dim=projection_dim // num_heads,
-        dropout=0.1, kernel_regularizer=reg)(h, h)
-    h = tf.keras.layers.Dropout(0.1)(h)
+        dropout=DROPOUT, kernel_regularizer=reg)(h, h)
+    h = tf.keras.layers.Dropout(DROPOUT)(h)
     x = tf.keras.layers.Add()([inputs, h])
 
     m = tf.keras.layers.LayerNormalization(epsilon=1e-6)(x)
     m = tf.keras.layers.Dense(mlp_dim, activation="gelu", kernel_regularizer=reg)(m)
-    m = tf.keras.layers.Dropout(0.1)(m)
+    m = tf.keras.layers.Dropout(DROPOUT)(m)
     m = tf.keras.layers.Dense(projection_dim, kernel_regularizer=reg)(m)
-    m = tf.keras.layers.Dropout(0.1)(m)
+    m = tf.keras.layers.Dropout(DROPOUT)(m)
     return tf.keras.layers.Add()([x, m])
 
 
@@ -269,7 +277,7 @@ def build_vit(input_shape, classes):
     # Same classifier head as the CNN / CRNN / LSTM
     x = tf.keras.layers.Dense(128, activation="relu",
                               kernel_regularizer=tf.keras.regularizers.l2(L2))(x)
-    x = tf.keras.layers.Dropout(0.5)(x)
+    x = tf.keras.layers.Dropout(HEAD_DROPOUT)(x)
     outputs = tf.keras.layers.Dense(classes, activation="softmax", name="genre_probabilities")(x)
 
     model = tf.keras.Model(inputs, outputs, name="MusicGenre_ViT_v2")
@@ -322,6 +330,10 @@ if os.environ.get("MUSICGENRE_TUNING_MODE") == "1":
     with open(ARTIFACT_REPORT_DIR / "validation_metrics.json", "w", encoding="utf-8") as f:
         json.dump({
             "learning_rate": LEARNING_RATE,
+            "model_config": {"transformer_layers": TRANSFORMER_LAYERS,
+                             "num_heads": NUM_HEADS, "mlp_dim": MLP_DIM,
+                             "dropout": DROPOUT, "head_dropout": HEAD_DROPOUT,
+                             "l2": L2},
             "track_validation_accuracy": float(np.mean(val_predictions == y_val)),
             "macro_f1": float(val_report["macro avg"]["f1-score"]),
             "classification_report": val_report,

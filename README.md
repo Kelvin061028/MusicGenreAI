@@ -217,7 +217,13 @@ Run the Streamlit application:
 streamlit run app.py
 ```
 
-Upload one track, choose any of the four classifiers, and view their genre probabilities and top-three results. When both CNN and CRNN are selected, the app also shows their ensemble. The app keeps up to 20 predictions in session history; clearing or ending the session removes that history.
+The interface is organized into five pages:
+
+- **Dashboard** — model overview, held-out comparison, and the latest uploaded-track prediction.
+- **Music Analyzer** — upload audio, select classifiers, and compare genre scores and top-three predictions; CNN + CRNN ensemble is included when both are selected.
+- **Model Laboratory** — inspect each model's selected configuration and compare its held-out metrics with the ensemble.
+- **Performance Analysis** — view test metrics, per-genre precision/recall/F1, confusion matrices, and training curves.
+- **History and Reports** — review up to 20 predictions from the current session and download prediction history or evaluation reports.
 
 ### Phase 4 — Final evaluation
 

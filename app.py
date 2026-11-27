@@ -6,6 +6,7 @@ import pandas as pd
 import librosa
 import tempfile
 import json
+import hashlib
 from datetime import datetime
 
 from pathlib import Path
@@ -375,145 +376,18 @@ def predict_uploaded_track(audio_bytes, audio_name, model_versions, norm_stats_j
 
 
 # =====================================================
-# 7. UPLOAD, PREDICT WITH ALL FOUR MODELS, AND COMPARE
-# =====================================================
+from src.streamlit_pages import run_pages
 
-st.set_page_config(page_title="MusicGenre AI", page_icon="🎵", layout="wide")
-st.title("🎵 MusicGenre AI")
-st.subheader("Music Genre Classification Using Deep Learning")
-st.write("Upload a track, choose which classifiers to compare, and review the predictions and probability scores.")
-
-uploaded_file = st.file_uploader(
-    "Upload a music file",
-    type=["wav", "mp3", "ogg", "flac"],
-)
-
-if uploaded_file is not None:
-    audio_bytes = uploaded_file.getvalue()
-    st.audio(audio_bytes, format=uploaded_file.type)
-    st.caption(f"Uploaded track: {uploaded_file.name} · predictions use up to the first {DURATION} seconds.")
-    selected_models = st.multiselect(
-        "Models to run", list(MODEL_FILES), default=list(MODEL_FILES),
-        help="The CNN + CRNN ensemble is added automatically when both models are selected.",
-    )
-
-    if not NORM_STATS_PATH.exists():
-        st.error(f"Training normalization stats not found: {NORM_STATS_PATH}")
-    else:
-        missing_models = [
-            name for name, filename in MODEL_FILES.items()
-            if not (MODEL_DIR / filename).exists()
-        ]
-        if missing_models:
-            st.warning("Missing model checkpoints: " + ", ".join(missing_models))
-
-        with NORM_STATS_PATH.open("r", encoding="utf-8") as stats_file:
-            norm_stats = json.load(stats_file)
-        genre_names = norm_stats.get("class_names", GENRES)
-        norm_stats_json = json.dumps(norm_stats, sort_keys=True)
-        model_versions = {
-            name: (MODEL_DIR / filename).stat().st_mtime_ns
-            for name, filename in MODEL_FILES.items()
-            if (MODEL_DIR / filename).exists()
-        }
-
-        with st.spinner("Running the selected models..."):
-            try:
-                predictions_by_model, prediction_errors = predict_uploaded_track(
-                    audio_bytes,
-                    uploaded_file.name,
-                    model_versions,
-                    norm_stats_json,
-                    genre_names,
-                    selected_models,
-                )
-            except Exception as error:
-                st.error("Could not process the uploaded audio.")
-                st.exception(error)
-                predictions_by_model, prediction_errors = {}, {}
-
-        for model_name, error in prediction_errors.items():
-            st.warning(f"{model_name} could not produce a prediction: {error}")
-
-        if predictions_by_model:
-            prediction_rows = []
-            probability_columns = {}
-            genre_votes = []
-            for model_name, probabilities in predictions_by_model.items():
-                predicted_index = int(np.argmax(probabilities))
-                predicted_genre = genre_names[predicted_index]
-                genre_votes.append(predicted_genre)
-                prediction_rows.append({
-                    "Model": model_name,
-                    "Predicted genre": predicted_genre.title(),
-                    "Confidence": float(probabilities[predicted_index]),
-                    "Runner-up": genre_names[int(np.argsort(probabilities)[-2])].title(),
-                })
-                probability_columns[model_name] = probabilities
-
-            st.divider()
-            st.header("Prediction Comparison")
-            metric_col, consensus_col = st.columns(2)
-            metric_col.metric("Models returned a result", f"{len(predictions_by_model)}")
-            ensemble = predictions_by_model.get("CNN + CRNN Ensemble")
-            if ensemble is not None:
-                consensus_col.metric("CNN + CRNN ensemble", genre_names[int(np.argmax(ensemble))].title(), f"{float(np.max(ensemble)):.1%} score")
-            elif genre_votes:
-                votes = pd.Series(genre_votes).value_counts()
-                consensus_col.metric("Most common prediction", votes.index[0].title(), f"{int(votes.iloc[0])} votes")
-
-            st.subheader("Each model's top prediction")
-            results_frame = pd.DataFrame(prediction_rows)
-            results_frame["Confidence"] = results_frame["Confidence"].map(lambda value: f"{value:.1%}")
-            st.dataframe(results_frame, hide_index=True, use_container_width=True)
-
-            st.subheader("Genre probabilities across all models")
-            probability_frame = pd.DataFrame(
-                probability_columns,
-                index=[genre.title() for genre in genre_names],
-            )
-            probability_frame.index.name = "Genre"
-            st.bar_chart(probability_frame)
-            st.caption("Probabilities are averaged across the track's 3-second segments. Confidence is a model score, not a guarantee that the prediction is correct.")
-
-            st.subheader("Top three genres per model")
-            top_three_rows = []
-            for model_name, probabilities in predictions_by_model.items():
-                for rank, index in enumerate(np.argsort(probabilities)[::-1][:3], start=1):
-                    top_three_rows.append({
-                        "Model": model_name,
-                        "Rank": rank,
-                        "Genre": genre_names[index].title(),
-                        "Probability": float(probabilities[index]),
-                    })
-            st.dataframe(pd.DataFrame(top_three_rows), hide_index=True, use_container_width=True)
-
-            # Keep a compact record of predictions in this browser session only.
-            signature = f"{uploaded_file.name}:{hash(audio_bytes)}:{','.join(selected_models)}"
-            if st.session_state.get("last_prediction_signature") != signature:
-                st.session_state.setdefault("prediction_history", []).insert(0, {
-                    "Time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                    "Track": uploaded_file.name,
-                    "Models": ", ".join(predictions_by_model),
-                    "Predictions": " | ".join(
-                        f"{row['Model']}: {row['Predicted genre']} ({row['Confidence']:.1%})"
-                        for row in prediction_rows
-                    ),
-                })
-                st.session_state.prediction_history = st.session_state.prediction_history[:20]
-                st.session_state.last_prediction_signature = signature
-
-st.divider()
-st.header("Recent prediction history")
-history = st.session_state.get("prediction_history", [])
-if history:
-    st.dataframe(pd.DataFrame(history), hide_index=True, use_container_width=True)
-    if st.button("Clear history"):
-        st.session_state.prediction_history = []
-        st.session_state.pop("last_prediction_signature", None)
-        st.rerun()
-else:
-    st.caption("Predictions from this browser session will appear here (up to 20 records).")
-
-st.divider()
-st.caption("MusicGenre AI · CNN · CRNN · LSTM · Vision Transformer")
+run_pages({
+    "st": st,
+    "root": ROOT,
+    "genres": GENRES,
+    "duration": DURATION,
+    "model_files": MODEL_FILES,
+    "model_dir": MODEL_DIR,
+    "norm_stats_path": NORM_STATS_PATH,
+    "predict": predict_uploaded_track,
+    "signature": lambda audio_bytes, selected_models: hashlib.sha256(
+        audio_bytes + "|".join(selected_models).encode("utf-8")
+    ).hexdigest(),
+})

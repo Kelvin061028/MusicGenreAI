@@ -29,6 +29,13 @@ DESCRIPTIONS = {
     "Vision Transformer": "Uses self-attention across patches of the log-Mel spectrogram.",
     "CNN + CRNN Ensemble": "Equal-weight average of the CNN and CRNN genre probabilities.",
 }
+ARCHITECTURE_NOTES = {
+    "CNN": "Four convolutional blocks extract spectrogram patterns before global pooling and classification.",
+    "CRNN": "Four convolutional blocks form a time sequence that is passed through two bidirectional LSTM layers.",
+    "LSTM": "Time pooling shortens each Mel-frame sequence before two LSTM layers classify it.",
+    "Vision Transformer": "Each segment is resized to 128 × 128, split into 16 × 16 patches, then processed by transformer blocks.",
+    "CNN + CRNN Ensemble": "For each genre, the ensemble takes the mean of the CNN and CRNN track-level scores.",
+}
 
 
 def _load_reports(root: Path):
@@ -55,16 +62,6 @@ def _summary(reports: dict):
             "Test tracks": int(report.get("test_tracks", 0)),
         })
     return pd.DataFrame(rows)
-
-
-def _format_summary(st, frame):
-    if frame.empty:
-        return
-    st.dataframe(
-        frame.style.format({"Accuracy": "{:.1%}", "Macro F1": "{:.3f}",
-                            "Weighted F1": "{:.3f}"}),
-        hide_index=True, use_container_width=True,
-    )
 
 
 def _prediction_table(st, result: dict, compact=False):
@@ -107,7 +104,7 @@ def _prediction_table(st, result: dict, compact=False):
 
 def _dashboard(st, reports, context):
     st.title("Dashboard")
-    st.caption("Overview of model results and predictions made in this session.")
+    st.caption("A quick overview of model availability and this session's activity.")
     summary = _summary(reports)
     latest = st.session_state.get("latest_prediction")
     history_count = len(st.session_state.get("prediction_history", []))
@@ -118,26 +115,22 @@ def _dashboard(st, reports, context):
     cols[2].metric("Best test accuracy", f"{best['Accuracy']:.1%}" if best is not None else "—",
                    best["Model"] if best is not None else "No report")
     cols[3].metric("Session predictions", str(history_count))
-
-    left, right = st.columns([1.15, 1])
-    with left:
-        st.subheader("Held-out model comparison")
-        if summary.empty:
-            st.info("No evaluation reports found. Run `python -m src.evaluate_final` to create them.")
+    st.subheader("Latest activity")
+    if latest:
+        predictions = latest.get("predictions", {})
+        ensemble = predictions.get("CNN + CRNN Ensemble")
+        if ensemble is not None:
+            genres = latest.get("genres", context["genres"])
+            top = int(np.argmax(ensemble))
+            st.info(f"Latest track: **{latest['track']}** · ensemble prediction: **{genres[top].title()}** · {latest['time']}")
         else:
-            st.bar_chart(summary.set_index("Model")[["Accuracy", "Macro F1"]],
-                         use_container_width=True)
-    with right:
-        st.subheader("Latest uploaded-track result")
-        if latest:
-            st.caption(f"{latest['track']} · {latest['time']}")
-            _prediction_table(st, latest, compact=True)
-        else:
-            st.info("No audio has been analyzed in this session yet.")
-    if not summary.empty:
-        with st.expander("Evaluation summary"):
-            _format_summary(st, summary)
-
+            st.info(f"Latest track: **{latest['track']}** · {len(predictions)} model results · {latest['time']}")
+    else:
+        st.info("No audio has been analyzed in this session yet.")
+    if latest and latest.get("errors"):
+        st.caption("Some models were unavailable: " + ", ".join(latest["errors"]))
+    if summary.empty:
+        st.caption("No evaluation reports found. Run `python -m src.evaluate_final` to create them.")
 
 def _music_analyzer(st, context):
     st.title("Music Analyzer")
@@ -213,18 +206,18 @@ def _music_analyzer(st, context):
         st.info("Your model comparison will appear here after you analyze a track.")
 
 
-def _model_laboratory(st, reports, context):
+def _model_laboratory(st, context):
     st.title("Model Laboratory")
-    st.caption("Inspect the four classifiers, their selected settings, and the ensemble.")
+    st.caption("Inspect the four classifiers, their selected settings, and how the ensemble works.")
     names = list(context["model_files"]) + ["CNN + CRNN Ensemble"]
     selected = st.selectbox("Choose a model", names)
-    summary = _summary(reports)
     left, right = st.columns([1.1, 1])
     with left:
         st.subheader(selected)
         st.write(DESCRIPTIONS[selected])
         if selected == "CNN + CRNN Ensemble":
-            st.markdown("**Method:** equal-weight average of CNN and CRNN probability scores.")
+            st.markdown("**Method:** average the CNN and CRNN probability vectors with equal weights.")
+            st.markdown("**Output:** a genre ranking for the uploaded track.")
         else:
             checkpoint = context["model_dir"] / context["model_files"][selected]
             st.markdown(f"**Checkpoint:** {'Available' if checkpoint.exists() else 'Missing'}")
@@ -242,39 +235,33 @@ def _model_laboratory(st, reports, context):
                 except (OSError, json.JSONDecodeError):
                     st.caption("The tuning configuration report could not be read.")
     with right:
-        st.subheader("Held-out test metrics")
-        row = summary[summary["Model"] == selected] if not summary.empty else pd.DataFrame()
-        if row.empty:
-            st.info("No test report was found for this model.")
-        else:
-            item = row.iloc[0]
-            st.metric("Accuracy", f"{item['Accuracy']:.1%}")
-            st.metric("Macro F1", f"{item['Macro F1']:.3f}")
-            st.metric("Weighted F1", f"{item['Weighted F1']:.3f}")
-            st.caption(f"Test tracks: {item['Test tracks']}")
-    latest = st.session_state.get("latest_prediction")
-    if latest:
-        st.divider()
-        st.subheader("Latest uploaded-track comparison")
-        _prediction_table(st, latest, compact=True)
-    st.divider()
-    st.subheader("All models and ensemble")
-    _format_summary(st, summary)
-
+        st.subheader("Architecture")
+        st.write(ARCHITECTURE_NOTES[selected])
+        st.markdown("**Shared prediction flow**")
+        st.caption("Log-Mel spectrogram → 3-second segments → genre probabilities → track-level average")
+        if selected == "CNN + CRNN Ensemble":
+            st.caption("Both component models must be available for the ensemble prediction.")
 
 def _performance_analysis(st, reports, root: Path):
     st.title("Performance Analysis")
-    st.caption("Held-out test metrics, per-genre scores, confusion matrices, and training curves.")
+    st.caption("Held-out test metrics, per-genre performance, and training diagnostics.")
     summary = _summary(reports)
     if summary.empty:
         st.info("No evaluation reports found. Run `python -m src.evaluate_final` first.")
         return
-    st.subheader("Model-level performance")
+    selected = st.selectbox("Inspect a model", list(reports), key="performance_model")
+    st.subheader("Model comparison")
     st.bar_chart(summary.set_index("Model")[["Accuracy", "Macro F1", "Weighted F1"]],
                  use_container_width=True)
-    _format_summary(st, summary)
+    selected_row = summary[summary["Model"] == selected]
+    if not selected_row.empty:
+        item = selected_row.iloc[0]
+        cols = st.columns(4)
+        cols[0].metric("Accuracy", f"{item['Accuracy']:.1%}")
+        cols[1].metric("Macro F1", f"{item['Macro F1']:.3f}")
+        cols[2].metric("Weighted F1", f"{item['Weighted F1']:.3f}")
+        cols[3].metric("Test tracks", str(item["Test tracks"]))
 
-    selected = st.selectbox("Inspect a model", list(reports), key="performance_model")
     report = reports[selected]
     details = report.get("classification_report", {})
     genre_rows = []
@@ -307,7 +294,6 @@ def _performance_analysis(st, reports, root: Path):
             st.line_chart(history.set_index("epoch")[columns], use_container_width=True)
             st.caption("Training/validation curves are segment-level; reported test metrics aggregate by track.")
 
-
 def _history_and_reports(st, reports):
     st.title("History and Reports")
     st.caption("Prediction history is kept in this browser session and can be exported.")
@@ -333,7 +319,6 @@ def _history_and_reports(st, reports):
     st.divider()
     st.subheader("Final evaluation reports")
     summary = _summary(reports)
-    _format_summary(st, summary)
     if not summary.empty:
         st.download_button("Download model comparison (CSV)", summary.to_csv(index=False).encode("utf-8"),
                            file_name="musicgenre_test_comparison.csv", mime="text/csv")
@@ -365,7 +350,7 @@ def run_pages(context):
     elif page == "Music Analyzer":
         _music_analyzer(st, context)
     elif page == "Model Laboratory":
-        _model_laboratory(st, reports, context)
+        _model_laboratory(st, context)
     elif page == "Performance Analysis":
         _performance_analysis(st, reports, context["root"])
     else:

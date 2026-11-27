@@ -211,7 +211,10 @@ def generate_spectrogram(audio):
 
 def extract_music_characteristics(audio):
     """Calculate descriptive audio features for the analyzed audio window."""
-    tempo_value, _ = librosa.beat.beat_track(y=audio, sr=SAMPLE_RATE)
+    # Read the tempo by position so this remains compatible with librosa
+    # releases that return additional beat-tracking values.
+    tempo_result = librosa.beat.beat_track(y=audio, sr=SAMPLE_RATE)
+    tempo_value = tempo_result[0]
     tempo_array = np.asarray(tempo_value).reshape(-1)
     tempo = float(tempo_array[0]) if tempo_array.size else 0.0
 
@@ -360,12 +363,13 @@ def predict_uploaded_track(audio_bytes, audio_name, model_versions, norm_stats_j
         temp_path = temp_file.name
 
     try:
-        audio, _ = librosa.load(
+        load_result = librosa.load(
             temp_path,
             sr=SAMPLE_RATE,
             mono=True,
             duration=DURATION,
         )
+        audio = load_result[0]
     finally:
         Path(temp_path).unlink(missing_ok=True)
 

@@ -182,6 +182,8 @@ python -m src.train_best_architectures
 
 The short search is only a screening pass, not a substitute for the full search or final training.
 
+Training samples are drawn as one random crop per track in each shuffled pass through the training split. The crop setting controls how many such passes contribute to an epoch, preserving the original training order while keeping the trial and final-training sample budgets explicit.
+
 ### GPU training on Windows with WSL2
 
 The native Windows TensorFlow build in the project's `.venv` is CPU-only. The existing `.venv_wsl` was created with Python 3.14, which is outside the Python versions supported by the current TensorFlow wheel. Create a fresh WSL2 environment with a supported Python version (3.10–3.13) and the GPU-enabled TensorFlow extra:

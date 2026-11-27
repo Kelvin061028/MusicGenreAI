@@ -152,9 +152,10 @@ def train_generator():
     n = len(X_train)
     while True:
         for i in rng.permutation(n):
-            for _ in range(CROPS_PER_TRACK):
-                start = rng.integers(0, N_FRAMES - SEG + 1)
-                yield X_train[i, :, start:start + SEG, :], y_train[i]
+            # One random crop per track per pass; steps_per_epoch controls
+            # how many independently shuffled passes are sampled each epoch.
+            start = rng.integers(0, N_FRAMES - SEG + 1)
+            yield X_train[i, :, start:start + SEG, :], y_train[i]
  
  
 train_ds = (

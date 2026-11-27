@@ -136,6 +136,42 @@ def _music_characteristics(st, features):
         )
 
 
+def _automatic_interpretation(st, features, predictions, genres):
+    """Summarize measured descriptors and the classifier's top label cautiously."""
+    if not features or not predictions:
+        return
+
+    # Prefer the ensemble when available; otherwise use the first selected model.
+    model_name = "CNN + CRNN Ensemble" if "CNN + CRNN Ensemble" in predictions else next(iter(predictions))
+    scores = np.asarray(predictions[model_name], dtype=float)
+    if not scores.size or len(genres) != scores.size:
+        return
+    predicted_genre = str(genres[int(np.argmax(scores))]).title()
+
+    tempo = float(features.get("tempo_bpm", 0))
+    if tempo <= 0:
+        tempo_text = "no clear tempo estimate"
+    else:
+        pace = "brisk" if tempo >= 120 else "moderate" if tempo >= 90 else "relaxed"
+        tempo_text = f"an estimated tempo of {tempo:.0f} BPM ({pace})"
+
+    energy = float(features.get("rms_energy", 0))
+    energy_text = "higher" if energy >= 0.15 else "moderate" if energy >= 0.07 else "lower"
+    centroid = float(features.get("spectral_centroid_hz", 0))
+    brightness = "brighter" if centroid >= 2500 else "less bright" if centroid < 1500 else "moderately bright"
+
+    st.subheader("Automatic interpretation")
+    st.write(
+        f"The uploaded track has {tempo_text}, {energy_text} RMS energy and a "
+        f"{brightness} spectral profile. Its top predicted genre is **{predicted_genre}** "
+        f"({model_name})."
+    )
+    st.caption(
+        "These are descriptive audio measurements and a model prediction; the measurements "
+        "do not prove the genre. Descriptive bands use simple rules."
+    )
+
+
 def _dashboard(st, reports, context):
     st.title("Dashboard")
     st.caption("A quick overview of model availability and this session's activity.")
@@ -245,6 +281,10 @@ def _music_analyzer(st, context):
         st.subheader(f"Results for {latest['track']}")
         st.caption(f"Analyzed {latest['time']} · inference uses up to {context['duration']} seconds.")
         _prediction_table(st, latest)
+        _automatic_interpretation(
+            st, latest.get("music_characteristics"), latest.get("predictions", {}),
+            latest.get("genres", context["genres"]),
+        )
         _music_characteristics(st, latest.get("music_characteristics"))
     else:
         st.info("Your model comparison will appear here after you analyze a track.")

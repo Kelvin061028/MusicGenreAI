@@ -180,6 +180,8 @@ Trial results are written to `reports/tuning/architecture_tuning_summary.csv`; t
 python -m src.train_best_architectures
 ```
 
+The tuner retains the earlier validation-selected configuration when no new candidate beats it on validation macro F1 (using accuracy as the tie-breaker).
+
 The short search is only a screening pass, not a substitute for the full search or final training.
 
 Training samples are drawn as one random crop per track in each shuffled pass through the training split. The crop setting controls how many such passes contribute to an epoch, preserving the original training order while keeping the trial and final-training sample budgets explicit.

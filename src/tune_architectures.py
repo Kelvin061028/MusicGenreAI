@@ -64,6 +64,15 @@ ENV_KEYS = {
     "transformer_layers": "MUSICGENRE_TRANSFORMER_LAYERS",
     "num_heads": "MUSICGENRE_NUM_HEADS", "mlp_dim": "MUSICGENRE_MLP_DIM",
 }
+BASELINE_ARCHITECTURES = {
+    "CNN": {"filter_base": 32, "dropout": .25, "head_dropout": .5, "l2": 1e-4},
+    "CRNN": {"filter_base": 32, "dropout": .25, "head_dropout": .5,
+             "rnn_units_1": 96, "rnn_units_2": 64, "rnn_dropout": .2, "l2": 1e-4},
+    "VIT": {"transformer_layers": 4, "num_heads": 4, "mlp_dim": 256,
+            "dropout": .1, "head_dropout": .5, "l2": 1e-4},
+    "LSTM": {"pool_size": 4, "lstm_units_1": 64, "lstm_units_2": 64,
+             "dropout": .3, "head_dropout": .5, "l2": 1e-4},
+}
 
 
 def main() -> None:
@@ -115,6 +124,34 @@ def main() -> None:
         if model not in best or (row["macro_f1"], row["track_validation_accuracy"]) > (
                 best[model]["macro_f1"], best[model]["track_validation_accuracy"]):
             best[model] = {**row, "config": json.loads(row["config"])}
+
+    # Keep the prior validation-selected setup unless the new architecture
+    # search improves its validation macro F1 (accuracy breaks ties). This
+    # prevents selecting a worse candidate just because every new trial scored
+    # below the already established learning-rate baseline.
+    baseline_path = REPORT_DIR / "best_configurations.json"
+    baselines = json.loads(baseline_path.read_text(encoding="utf-8"))
+    for model in list(best):
+        previous = baselines.get(model)
+        if previous is None:
+            continue
+        candidate = best[model]
+        candidate_score = (float(candidate["macro_f1"]),
+                           float(candidate["track_validation_accuracy"]))
+        baseline_score = (float(previous["macro_f1"]),
+                          float(previous["track_validation_accuracy"]))
+        if candidate_score <= baseline_score:
+            best[model] = {
+                "model": model,
+                "selection_source": "previous_validation_baseline",
+                "track_validation_accuracy": baseline_score[1],
+                "macro_f1": baseline_score[0],
+                "config": {**BASELINE_ARCHITECTURES[model],
+                           "learning_rate": float(previous["learning_rate"])},
+                "artifact_dir": previous.get("artifact_dir"),
+            }
+        else:
+            best[model]["selection_source"] = "architecture_search"
     best_path = REPORT_DIR / "best_architectures.json"
     best_path.write_text(json.dumps(best, indent=2), encoding="utf-8")
 

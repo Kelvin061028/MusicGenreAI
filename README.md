@@ -207,7 +207,7 @@ If `python3.12` is not installed in WSL, install a supported Python version firs
 
 ### Phase 2 — Ensemble learning
 
-The final evaluation script builds an equal-weight probability average from the CNN and CRNN outputs and compares it with each individual model. This is a fixed, transparent ensemble; the test set is not used to choose its weights.
+The final evaluation script builds an equal-weight probability average from the CNN and CRNN outputs and compares it with each individual model. On the latest held-out GTZAN evaluation, the ensemble outperformed both components. The ensemble weights are fixed equally; the test set is not used to choose them.
 
 ### Phase 3 — System development
 
@@ -239,13 +239,13 @@ Latest final evaluation (151 held-out test tracks):
 
 | Model | Test accuracy | Macro F1 |
 |---|---:|---:|
-| CNN | 83.44% | 0.8279 |
-| CNN + CRNN ensemble | 82.78% | 0.8141 |
-| CRNN | 80.79% | 0.7974 |
-| ViT | 80.13% | 0.7972 |
-| LSTM | 68.87% | 0.6703 |
+| CNN + CRNN ensemble | 88.08% | 0.8767 |
+| CNN | 86.75% | 0.8637 |
+| CRNN | 85.43% | 0.8502 |
+| ViT | 78.15% | 0.7715 |
+| LSTM | 67.55% | 0.6636 |
 
-The equal-weight ensemble did not outperform the CNN on this split. Keep it as a comparison option in the app and report this outcome as-is; do not claim that ensembling improved accuracy.
+These are track-level scores on the same 151-track held-out test split. Report the ensemble result alongside the individual models.
 
 Generate the baseline model comparison charts and table with:
 

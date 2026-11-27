@@ -1,0 +1,88 @@
+{
+  "learning_rate": 0.0005,
+  "model_config": {
+    "transformer_layers": 4,
+    "num_heads": 2,
+    "mlp_dim": 256,
+    "dropout": 0.1,
+    "head_dropout": 0.5,
+    "l2": 0.0001
+  },
+  "track_validation_accuracy": 0.6912751677852349,
+  "macro_f1": 0.6858718636019987,
+  "classification_report": {
+    "blues": {
+      "precision": 0.9,
+      "recall": 0.6,
+      "f1-score": 0.72,
+      "support": 15.0
+    },
+    "classical": {
+      "precision": 0.6666666666666666,
+      "recall": 0.9333333333333333,
+      "f1-score": 0.7777777777777778,
+      "support": 15.0
+    },
+    "country": {
+      "precision": 0.4482758620689655,
+      "recall": 0.8666666666666667,
+      "f1-score": 0.5909090909090909,
+      "support": 15.0
+    },
+    "disco": {
+      "precision": 0.7333333333333333,
+      "recall": 0.7333333333333333,
+      "f1-score": 0.7333333333333333,
+      "support": 15.0
+    },
+    "hiphop": {
+      "precision": 0.7777777777777778,
+      "recall": 0.9333333333333333,
+      "f1-score": 0.8484848484848485,
+      "support": 15.0
+    },
+    "jazz": {
+      "precision": 0.7777777777777778,
+      "recall": 0.5,
+      "f1-score": 0.6086956521739131,
+      "support": 14.0
+    },
+    "metal": {
+      "precision": 0.9285714285714286,
+      "recall": 0.8666666666666667,
+      "f1-score": 0.896551724137931,
+      "support": 15.0
+    },
+    "pop": {
+      "precision": 0.875,
+      "recall": 0.4666666666666667,
+      "f1-score": 0.6086956521739131,
+      "support": 15.0
+    },
+    "reggae": {
+      "precision": 0.7142857142857143,
+      "recall": 0.6666666666666666,
+      "f1-score": 0.6896551724137931,
+      "support": 15.0
+    },
+    "rock": {
+      "precision": 0.45454545454545453,
+      "recall": 0.3333333333333333,
+      "f1-score": 0.38461538461538464,
+      "support": 15.0
+    },
+    "accuracy": 0.6912751677852349,
+    "macro avg": {
+      "precision": 0.7276234015027118,
+      "recall": 0.6900000000000001,
+      "f1-score": 0.6858718636019987,
+      "support": 149.0
+    },
+    "weighted avg": {
+      "precision": 0.7272867949505302,
+      "recall": 0.6912751677852349,
+      "f1-score": 0.6863898247525226,
+      "support": 149.0
+    }
+  }
+}

@@ -1,0 +1,88 @@
+{
+  "learning_rate": 0.0005,
+  "model_config": {
+    "pool_size": 4,
+    "lstm_units_1": 64,
+    "lstm_units_2": 64,
+    "dropout": 0.3,
+    "head_dropout": 0.5,
+    "l2": 0.0001
+  },
+  "track_validation_accuracy": 0.6510067114093959,
+  "macro_f1": 0.6415709741533724,
+  "classification_report": {
+    "blues": {
+      "precision": 0.52,
+      "recall": 0.8666666666666667,
+      "f1-score": 0.65,
+      "support": 15.0
+    },
+    "classical": {
+      "precision": 0.8823529411764706,
+      "recall": 1.0,
+      "f1-score": 0.9375,
+      "support": 15.0
+    },
+    "country": {
+      "precision": 0.4666666666666667,
+      "recall": 0.4666666666666667,
+      "f1-score": 0.4666666666666667,
+      "support": 15.0
+    },
+    "disco": {
+      "precision": 0.4666666666666667,
+      "recall": 0.4666666666666667,
+      "f1-score": 0.4666666666666667,
+      "support": 15.0
+    },
+    "hiphop": {
+      "precision": 0.6666666666666666,
+      "recall": 0.8,
+      "f1-score": 0.7272727272727273,
+      "support": 15.0
+    },
+    "jazz": {
+      "precision": 0.7058823529411765,
+      "recall": 0.8571428571428571,
+      "f1-score": 0.7741935483870968,
+      "support": 14.0
+    },
+    "metal": {
+      "precision": 0.9166666666666666,
+      "recall": 0.7333333333333333,
+      "f1-score": 0.8148148148148148,
+      "support": 15.0
+    },
+    "pop": {
+      "precision": 0.8181818181818182,
+      "recall": 0.6,
+      "f1-score": 0.6923076923076923,
+      "support": 15.0
+    },
+    "reggae": {
+      "precision": 0.6363636363636364,
+      "recall": 0.4666666666666667,
+      "f1-score": 0.5384615384615384,
+      "support": 15.0
+    },
+    "rock": {
+      "precision": 0.5,
+      "recall": 0.26666666666666666,
+      "f1-score": 0.34782608695652173,
+      "support": 15.0
+    },
+    "accuracy": 0.6510067114093959,
+    "macro avg": {
+      "precision": 0.6579447415329769,
+      "recall": 0.6523809523809524,
+      "f1-score": 0.6415709741533724,
+      "support": 149.0
+    },
+    "weighted avg": {
+      "precision": 0.6576230125973513,
+      "recall": 0.6510067114093959,
+      "f1-score": 0.6406808897625422,
+      "support": 149.0
+    }
+  }
+}

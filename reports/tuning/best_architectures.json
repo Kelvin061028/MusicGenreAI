@@ -1,0 +1,73 @@
+{
+  "CNN": {
+    "model": "CNN",
+    "selection_source": "previous_validation_baseline",
+    "track_validation_accuracy": 0.8456375838926175,
+    "macro_f1": 0.845976062467998,
+    "config": {
+      "filter_base": 32,
+      "dropout": 0.25,
+      "head_dropout": 0.5,
+      "l2": 0.0001,
+      "learning_rate": 0.0005
+    },
+    "artifact_dir": "tuning/cnn/lr_5e-04"
+  },
+  "CRNN": {
+    "model": "CRNN",
+    "trial": 5,
+    "track_validation_accuracy": 0.8389261744966443,
+    "macro_f1": 0.8429062416586953,
+    "config": {
+      "dropout": 0.25,
+      "filter_base": 32,
+      "head_dropout": 0.5,
+      "l2": 0.0001,
+      "learning_rate": 0.001,
+      "rnn_dropout": 0.2,
+      "rnn_units_1": 96,
+      "rnn_units_2": 64
+    },
+    "search_epochs": 20,
+    "search_patience": 5,
+    "crops_per_track": 6,
+    "artifact_dir": "tuning/architecture/crnn/trial_05",
+    "selection_source": "architecture_search"
+  },
+  "VIT": {
+    "model": "VIT",
+    "selection_source": "previous_validation_baseline",
+    "track_validation_accuracy": 0.7248322147651006,
+    "macro_f1": 0.7309322422061907,
+    "config": {
+      "transformer_layers": 4,
+      "num_heads": 4,
+      "mlp_dim": 256,
+      "dropout": 0.1,
+      "head_dropout": 0.5,
+      "l2": 0.0001,
+      "learning_rate": 0.0005
+    },
+    "artifact_dir": "tuning/vit/lr_5e-04"
+  },
+  "LSTM": {
+    "model": "LSTM",
+    "trial": 1,
+    "track_validation_accuracy": 0.7516778523489933,
+    "macro_f1": 0.7540201378480023,
+    "config": {
+      "dropout": 0.3,
+      "head_dropout": 0.5,
+      "l2": 0.0001,
+      "learning_rate": 0.001,
+      "lstm_units_1": 64,
+      "lstm_units_2": 64,
+      "pool_size": 4
+    },
+    "search_epochs": 20,
+    "search_patience": 5,
+    "crops_per_track": 6,
+    "artifact_dir": "tuning/architecture/lstm/trial_01",
+    "selection_source": "architecture_search"
+  }
+}

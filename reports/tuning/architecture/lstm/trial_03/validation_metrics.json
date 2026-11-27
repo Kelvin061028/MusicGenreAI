@@ -1,0 +1,88 @@
+{
+  "learning_rate": 0.001,
+  "model_config": {
+    "pool_size": 4,
+    "lstm_units_1": 96,
+    "lstm_units_2": 64,
+    "dropout": 0.3,
+    "head_dropout": 0.5,
+    "l2": 0.0001
+  },
+  "track_validation_accuracy": 0.7181208053691275,
+  "macro_f1": 0.7194244618007131,
+  "classification_report": {
+    "blues": {
+      "precision": 0.75,
+      "recall": 0.8,
+      "f1-score": 0.7741935483870968,
+      "support": 15.0
+    },
+    "classical": {
+      "precision": 0.7142857142857143,
+      "recall": 1.0,
+      "f1-score": 0.8333333333333334,
+      "support": 15.0
+    },
+    "country": {
+      "precision": 0.6153846153846154,
+      "recall": 0.5333333333333333,
+      "f1-score": 0.5714285714285714,
+      "support": 15.0
+    },
+    "disco": {
+      "precision": 0.5555555555555556,
+      "recall": 0.6666666666666666,
+      "f1-score": 0.6060606060606061,
+      "support": 15.0
+    },
+    "hiphop": {
+      "precision": 0.8571428571428571,
+      "recall": 0.8,
+      "f1-score": 0.8275862068965517,
+      "support": 15.0
+    },
+    "jazz": {
+      "precision": 0.9,
+      "recall": 0.6428571428571429,
+      "f1-score": 0.75,
+      "support": 14.0
+    },
+    "metal": {
+      "precision": 1.0,
+      "recall": 0.7333333333333333,
+      "f1-score": 0.8461538461538461,
+      "support": 15.0
+    },
+    "pop": {
+      "precision": 0.7333333333333333,
+      "recall": 0.7333333333333333,
+      "f1-score": 0.7333333333333333,
+      "support": 15.0
+    },
+    "reggae": {
+      "precision": 0.7142857142857143,
+      "recall": 0.6666666666666666,
+      "f1-score": 0.6896551724137931,
+      "support": 15.0
+    },
+    "rock": {
+      "precision": 0.5294117647058824,
+      "recall": 0.6,
+      "f1-score": 0.5625,
+      "support": 15.0
+    },
+    "accuracy": 0.7181208053691275,
+    "macro avg": {
+      "precision": 0.7369399554693673,
+      "recall": 0.7176190476190476,
+      "f1-score": 0.7194244618007131,
+      "support": 149.0
+    },
+    "weighted avg": {
+      "precision": 0.7358455927543964,
+      "recall": 0.7181208053691275,
+      "f1-score": 0.7192192568463555,
+      "support": 149.0
+    }
+  }
+}

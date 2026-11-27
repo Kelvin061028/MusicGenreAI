@@ -209,6 +209,35 @@ def generate_spectrogram(audio):
     return mel_db.astype(np.float32)
 
 
+def extract_music_characteristics(audio):
+    """Calculate descriptive audio features for the analyzed audio window."""
+    tempo_value, _ = librosa.beat.beat_track(y=audio, sr=SAMPLE_RATE)
+    tempo_array = np.asarray(tempo_value).reshape(-1)
+    tempo = float(tempo_array[0]) if tempo_array.size else 0.0
+
+    rms = float(np.mean(librosa.feature.rms(y=audio, frame_length=N_FFT, hop_length=HOP_LENGTH)))
+    centroid = float(np.mean(librosa.feature.spectral_centroid(
+        y=audio, sr=SAMPLE_RATE, n_fft=N_FFT, hop_length=HOP_LENGTH)))
+    bandwidth = float(np.mean(librosa.feature.spectral_bandwidth(
+        y=audio, sr=SAMPLE_RATE, n_fft=N_FFT, hop_length=HOP_LENGTH)))
+    rolloff = float(np.mean(librosa.feature.spectral_rolloff(
+        y=audio, sr=SAMPLE_RATE, n_fft=N_FFT, hop_length=HOP_LENGTH)))
+    zcr = float(np.mean(librosa.feature.zero_crossing_rate(
+        y=audio, frame_length=N_FFT, hop_length=HOP_LENGTH)))
+    chroma = librosa.feature.chroma_stft(
+        y=audio, sr=SAMPLE_RATE, n_fft=N_FFT, hop_length=HOP_LENGTH,
+    ).mean(axis=1)
+    return {
+        "tempo_bpm": tempo,
+        "rms_energy": rms,
+        "spectral_centroid_hz": centroid,
+        "spectral_bandwidth_hz": bandwidth,
+        "spectral_rolloff_hz": rolloff,
+        "zero_crossing_rate": zcr,
+        "chroma": np.asarray(chroma, dtype=float).tolist(),
+    }
+
+
 # =====================================================
 # 5. AUTOMATIC MODEL INPUT PREPARATION
 # =====================================================
@@ -341,9 +370,11 @@ def predict_uploaded_track(audio_bytes, audio_name, model_versions, norm_stats_j
         Path(temp_path).unlink(missing_ok=True)
 
     target_length = SAMPLE_RATE * DURATION
+    audio = audio[:target_length]
+    feature_audio = audio if len(audio) else np.zeros(SAMPLE_RATE, dtype=np.float32)
+    music_characteristics = extract_music_characteristics(feature_audio)
     if len(audio) < target_length:
         audio = np.pad(audio, (0, target_length - len(audio)))
-    audio = audio[:target_length]
     mel_db = generate_spectrogram(audio)
     norm_stats = json.loads(norm_stats_json)
 
@@ -372,7 +403,7 @@ def predict_uploaded_track(audio_bytes, audio_name, model_versions, norm_stats_j
 
     if "CNN" in results and "CRNN" in results:
         results["CNN + CRNN Ensemble"] = ((results["CNN"] + results["CRNN"]) / 2).astype(float)
-    return results, errors
+    return results, errors, music_characteristics
 
 
 # =====================================================

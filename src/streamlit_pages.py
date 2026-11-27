@@ -102,6 +102,40 @@ def _prediction_table(st, result: dict, compact=False):
     st.caption("Scores average the model’s predictions across 3-second segments; they are not guarantees of correctness.")
 
 
+def _music_characteristics(st, features):
+    if not features:
+        return
+    st.divider()
+    st.subheader("Music Characteristics")
+    st.caption("Measured from the uploaded audio window. These descriptors are separate from the classifiers’ log-Mel inputs.")
+    tempo = float(features.get("tempo_bpm", 0))
+    metric_cols = st.columns(3)
+    metric_cols[0].metric("Estimated tempo", f"{tempo:.0f} BPM" if tempo > 0 else "No clear beat")
+    metric_cols[1].metric("RMS energy", f"{float(features.get('rms_energy', 0)):.3f}")
+    metric_cols[2].metric("Spectral centroid", f"{float(features.get('spectral_centroid_hz', 0)) / 1000:.2f} kHz")
+    metric_cols = st.columns(3)
+    metric_cols[0].metric("Spectral bandwidth", f"{float(features.get('spectral_bandwidth_hz', 0)) / 1000:.2f} kHz")
+    metric_cols[1].metric("Spectral rolloff", f"{float(features.get('spectral_rolloff_hz', 0)) / 1000:.2f} kHz")
+    metric_cols[2].metric("Zero-crossing rate", f"{float(features.get('zero_crossing_rate', 0)):.3f}")
+    chroma = np.asarray(features.get("chroma", []), dtype=float)
+    if chroma.size == 12:
+        pitch_classes = ["C", "C♯", "D", "D♯", "E", "F", "F♯", "G", "G♯", "A", "A♯", "B"]
+        st.markdown("**Chroma distribution**")
+        chroma_frame = pd.DataFrame({"Mean intensity": chroma}, index=pitch_classes)
+        chroma_frame.index.name = "Pitch class"
+        st.bar_chart(chroma_frame, use_container_width=True)
+    with st.expander("What the measurements mean"):
+        st.markdown(
+            "- **Tempo:** estimated beats per minute.\n"
+            "- **RMS energy:** average signal amplitude.\n"
+            "- **Spectral centroid:** a brightness-related measure.\n"
+            "- **Bandwidth:** frequency spread around the centroid.\n"
+            "- **Rolloff:** frequency below which most spectral energy lies.\n"
+            "- **Zero-crossing rate:** how often the waveform crosses zero.\n"
+            "- **Chroma:** relative energy across the 12 pitch classes."
+        )
+
+
 def _dashboard(st, reports, context):
     st.title("Dashboard")
     st.caption("A quick overview of model availability and this session's activity.")
@@ -172,12 +206,12 @@ def _music_analyzer(st, context):
             }
             with st.spinner("Analyzing audio with the selected classifiers..."):
                 try:
-                    predictions, errors = context["predict"](
+                    predictions, errors, music_characteristics = context["predict"](
                         audio_bytes, uploaded.name, model_versions,
                         json.dumps(stats, sort_keys=True), genre_names, selected_models,
                     )
                 except Exception as error:
-                    predictions, errors = {}, {"Audio processing": str(error)}
+                    predictions, errors, music_characteristics = {}, {"Audio processing": str(error)}, None
             for model_name, message in errors.items():
                 st.warning(f"{model_name}: {message}")
             if predictions:
@@ -188,11 +222,13 @@ def _music_analyzer(st, context):
                     "predictions": {name: np.asarray(scores).tolist()
                                     for name, scores in predictions.items()},
                     "errors": errors, "signature": signature,
+                    "music_characteristics": music_characteristics,
                 }
                 st.session_state.latest_prediction = latest
                 if st.session_state.get("last_prediction_signature") != signature:
                     st.session_state.setdefault("prediction_history", []).insert(0, {
                         "time": now, "track": uploaded.name, "models": list(predictions),
+                        "music_characteristics": music_characteristics,
                         "predictions": {
                             name: {"genre": genre_names[int(np.argmax(scores))],
                                    "score": float(np.max(scores)),
@@ -209,6 +245,7 @@ def _music_analyzer(st, context):
         st.subheader(f"Results for {latest['track']}")
         st.caption(f"Analyzed {latest['time']} · inference uses up to {context['duration']} seconds.")
         _prediction_table(st, latest)
+        _music_characteristics(st, latest.get("music_characteristics"))
     else:
         st.info("Your model comparison will appear here after you analyze a track.")
 
@@ -308,6 +345,15 @@ def _history_and_reports(st, reports):
             row = {"Time": entry["time"], "Track": entry["track"], "Models": ", ".join(entry["models"])}
             for model, item in entry["predictions"].items():
                 row[model] = f"{item['genre'].title()} ({item['score']:.1%})"
+            features = entry.get("music_characteristics") or {}
+            if features:
+                row["Tempo BPM"] = features.get("tempo_bpm")
+                row["RMS Energy"] = features.get("rms_energy")
+                row["Spectral Centroid Hz"] = features.get("spectral_centroid_hz")
+                row["Spectral Bandwidth Hz"] = features.get("spectral_bandwidth_hz")
+                row["Spectral Rolloff Hz"] = features.get("spectral_rolloff_hz")
+                row["Zero-Crossing Rate"] = features.get("zero_crossing_rate")
+                row["Chroma"] = json.dumps(features.get("chroma", []))
             rows.append(row)
         st.dataframe(pd.DataFrame(rows), hide_index=True, use_container_width=True)
         st.download_button("Download history (JSON)", json.dumps(history, indent=2).encode("utf-8"),

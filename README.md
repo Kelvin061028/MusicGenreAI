@@ -220,7 +220,7 @@ streamlit run app.py
 The interface is organized into five pages:
 
 - **Dashboard** — model overview, held-out comparison, and the latest uploaded-track prediction.
-- **Music Analyzer** — upload audio, select classifiers, and compare genre scores and top-three predictions; CNN + CRNN ensemble is included when both are selected.
+- **Music Analyzer** — upload audio, select classifiers, compare genre scores and top-three predictions, and view tempo, RMS energy, spectral centroid/bandwidth/rolloff, zero-crossing rate, and chroma; CNN + CRNN ensemble is included when both are selected.
 - **Model Laboratory** — inspect each model's selected configuration and compare its held-out metrics with the ensemble.
 - **Performance Analysis** — view test metrics, per-genre precision/recall/F1, confusion matrices, and training curves.
 - **History and Reports** — review up to 20 predictions from the current session and download prediction history or evaluation reports.

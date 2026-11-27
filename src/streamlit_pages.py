@@ -115,6 +115,13 @@ def _dashboard(st, reports, context):
     cols[2].metric("Best test accuracy", f"{best['Accuracy']:.1%}" if best is not None else "—",
                    best["Model"] if best is not None else "No report")
     cols[3].metric("Session predictions", str(history_count))
+    if not summary.empty:
+        st.subheader("Model comparison summary")
+        st.bar_chart(summary.set_index("Model")[["Accuracy", "Macro F1"]],
+                     use_container_width=True)
+        compact_summary = summary[["Model", "Accuracy", "Macro F1"]]
+        st.dataframe(compact_summary.style.format({"Accuracy": "{:.1%}", "Macro F1": "{:.3f}"}),
+                     hide_index=True, use_container_width=True)
     st.subheader("Latest activity")
     if latest:
         predictions = latest.get("predictions", {})
@@ -250,9 +257,6 @@ def _performance_analysis(st, reports, root: Path):
         st.info("No evaluation reports found. Run `python -m src.evaluate_final` first.")
         return
     selected = st.selectbox("Inspect a model", list(reports), key="performance_model")
-    st.subheader("Model comparison")
-    st.bar_chart(summary.set_index("Model")[["Accuracy", "Macro F1", "Weighted F1"]],
-                 use_container_width=True)
     selected_row = summary[summary["Model"] == selected]
     if not selected_row.empty:
         item = selected_row.iloc[0]

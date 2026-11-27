@@ -212,11 +212,15 @@ def _dashboard(st, reports, context):
 def _music_analyzer(st, context):
     st.title("Music Analyzer")
     st.caption("Upload a track and compare predictions from the selected models.")
+    uploaded = st.file_uploader(
+        "Choose an audio file", type=["wav", "mp3", "ogg", "flac"],
+        help=f"Predictions use up to the first {context['duration']} seconds.",
+        key="music_analyzer_upload",
+    )
+    if uploaded is not None:
+        st.audio(uploaded.getvalue(), format=uploaded.type or None)
+
     with st.form("music_analyzer_form"):
-        uploaded = st.file_uploader(
-            "Choose an audio file", type=["wav", "mp3", "ogg", "flac"],
-            help=f"Predictions use up to the first {context['duration']} seconds.",
-        )
         selected_models = st.multiselect(
             "Models to run", list(context["model_files"]),
             default=list(context["model_files"]),
